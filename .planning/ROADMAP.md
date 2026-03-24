@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 2 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Create profile-generation-guide.md and update workflow.md Phase 0 generation step (PROF-03)
+- [x] 01-01-PLAN.md — Create profile-generation-guide.md and update workflow.md Phase 0 generation step (PROF-03)
 - [ ] 01-02-PLAN.md — Add clone-and-tweak path to workflow.md Phase 0 and update profiles/README.md (PROF-04)
 
 ### Phase 2: Job Targeting + Cover Letter
@@ -61,6 +61,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Profile Expansion | 0/2 | Not started | - |
+| 1. Profile Expansion | 1/2 | In Progress|  |
 | 2. Job Targeting + Cover Letter | 0/? | Not started | - |
 | 3. LinkedIn + Dashboard | 0/? | Not started | - |
