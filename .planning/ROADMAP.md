@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 - [x] 01-01-PLAN.md — Create profile-generation-guide.md and update workflow.md Phase 0 generation step (PROF-03)
-- [ ] 01-02-PLAN.md — Add clone-and-tweak path to workflow.md Phase 0 and update profiles/README.md (PROF-04)
+- [x] 01-02-PLAN.md — Add clone-and-tweak path to workflow.md Phase 0 and update profiles/README.md (PROF-04)
 
 ### Phase 2: Job Targeting + Cover Letter
 **Goal**: Users can aim the resume at a specific job posting and generate a matching cover letter
