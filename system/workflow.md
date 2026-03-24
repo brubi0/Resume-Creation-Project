@@ -25,11 +25,12 @@ Before starting the interview, determine which industry profile to use.
    - What is your target role/title?
    - Any must-have certifications, tools, or frameworks for this role?
 3. If a matching profile exists, confirm it fits or offer to tweak it
-4. If no profile exists, generate one:
-   - Research 5-10 current job postings for the target role using web search
-   - Extract common skills, group into categories
-   - Define proficiency levels relevant to the industry
-   - Save to `profiles/[role_slug].md`
+4. If no profile exists, generate one by following `system/profile-generation-guide.md`:
+   - Primary method: search for 3-5 current job postings for the target role (per D-01, D-02)
+   - Alternative: if the user has pasted job posting URLs or text, use those instead of searching (per D-04)
+   - Fallback: if web search is unavailable or returns fewer than 3 relevant postings, build from training knowledge and mark the profile as **Knowledge-based** (per D-03)
+   - Save to `profiles/[role_slug].md` (snake_case, e.g., `financial_controller.md`)
+   - Confirm with user before proceeding
 5. Record the selected profile in the candidate's `discovery.md`
 
 → Proceed to Phase 1
