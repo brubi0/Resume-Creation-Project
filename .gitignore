@@ -1,0 +1,6 @@
+# Tool-specific
+.codebase/
+.claude/settings.local.json
+
+# Candidate personal data — never commit
+candidates/
