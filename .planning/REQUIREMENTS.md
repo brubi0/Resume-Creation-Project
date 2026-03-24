@@ -113,7 +113,7 @@ Deferred to future milestone.
 | CAND-01 | Pre-GSD | Complete |
 | CAND-02 | Pre-GSD | Complete |
 | CAND-03 | Pre-GSD | Complete |
-| CAND-04 | Phase 4 | Pending |
+| CAND-04 | Phase 3 | Pending |
 | TARG-01 | Phase 2 | Pending |
 | TARG-02 | Phase 2 | Pending |
 | TARG-03 | Phase 2 | Pending |
@@ -121,9 +121,9 @@ Deferred to future milestone.
 **Coverage:**
 - v1 requirements: 31 total
 - Complete (pre-GSD): 22
-- Mapped to phases: 9
+- Mapped to phases: 9 (Phase 1: 2, Phase 2: 4, Phase 3: 3)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-23*
-*Last updated: 2026-03-23 after GSD initialization (retroactive)*
+*Last updated: 2026-03-23 — traceability corrected (CAND-04 moved from Phase 4 to Phase 3)*
