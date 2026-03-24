@@ -124,3 +124,61 @@ pandoc [Name]_Interview_Prep.md -o [Name]_Interview_Prep.docx --reference-doc="t
 - Omit categories rated as Novice unless the candidate specifically wants to show them
 - Group skills using the categories from the selected industry profile
 - Categories and skills come from the profile, not hardcoded
+
+---
+
+## 4. Score Card
+
+**Format:** Markdown
+
+**File naming:** `[Name]_Score_Card.md`
+
+**Content:**
+
+```markdown
+# Resume Score Card — [Candidate Name]
+
+**Target Role:** [Primary target role]
+**Date:** [date]
+
+---
+
+## Criteria Scores
+
+| Criteria | Score (1-10) | Notes |
+|----------|-------------|-------|
+| Clarity | X | [Specific observation] |
+| Focus | X | [Specific observation] |
+| Quantification | X | [Specific observation] |
+| Results-Driven | X | [Specific observation] |
+| Cuts Through Noise | X | [Specific observation] |
+| Skimability | X | [Specific observation] |
+| **Overall** | **X** | |
+
+## 7-Second Test
+
+**What a recruiter sees in 7 seconds:**
+[Simulated first impression]
+
+**Identified as:** [Role/level the recruiter would assume]
+**Match to target role:** [Yes/No/Partial — explain]
+
+## Strengths
+- [What the resume does well]
+
+## Areas for Improvement
+- [What could still be stronger]
+
+## Bullet Audit
+
+| Bullet | Status | Issue |
+|--------|--------|-------|
+| [Abbreviated bullet] | Pass / Weak / Cut | [Reason if not Pass] |
+```
+
+**Scoring guide:**
+- **9-10:** Exceptional — recruiter would call immediately
+- **7-8:** Strong — lands in the top 20%, competitive
+- **5-6:** Average — gets read but doesn't stand out
+- **3-4:** Weak — likely skipped after 7-second scan
+- **1-2:** Needs complete rewrite
