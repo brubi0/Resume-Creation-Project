@@ -26,6 +26,8 @@ Every resume produced by this system must make a recruiter stop and call the can
 - ✓ Interview prep guide output format (STAR) — v1.0
 - ✓ Skills matrix output format (HTML with color coding) — v1.0
 - ✓ Score card output format (6-criteria grading) — v1.0
+- ✓ Auto-generated profile from job posting research (3-5 postings, knowledge fallback) — Phase 1
+- ✓ Clone-and-tweak path for related role profiles — Phase 1
 
 ### Active
 
@@ -33,7 +35,6 @@ Every resume produced by this system must make a recruiter stop and call the can
 - [ ] Cover letter as optional deliverable — targeted to specific job postings
 - [ ] LinkedIn profile optimization as optional deliverable
 - [ ] Job description targeting — pull keywords from specific postings into the resume
-- [ ] Auto-generated profile from job posting research (web search integration)
 
 ### Out of Scope
 
