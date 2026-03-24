@@ -24,7 +24,14 @@ Before starting the interview, determine which industry profile to use.
    - What industry are you in?
    - What is your target role/title?
    - Any must-have certifications, tools, or frameworks for this role?
-3. If a matching profile exists, confirm it fits or offer to tweak it
+3. Match the profile to the candidate's role using this logic:
+   - **Exact or close match** (profile covers the target role or a near-equivalent): Confirm it fits and proceed
+   - **Partial match** (profile covers a related role — e.g., candidate wants Financial Controller and you have NetSuite Administrator): Offer to clone and tweak:
+     - Copy the source profile to `profiles/[new_role_slug].md` (e.g., `financial_controller.md`)
+     - Update the header: `# Profile: [New Role Name]`, `**Industry:**`, `**Target Roles:**`
+     - Review each skill category: remove irrelevant ones, rename any that need to shift focus, add 1-3 new categories for skills unique to the new role
+     - Save and confirm with user before proceeding
+   - **No match**: Generate a new profile — see step 4
 4. If no profile exists, generate one by following `system/profile-generation-guide.md`:
    - Primary method: search for 3-5 current job postings for the target role (per D-01, D-02)
    - Alternative: if the user has pasted job posting URLs or text, use those instead of searching (per D-04)
