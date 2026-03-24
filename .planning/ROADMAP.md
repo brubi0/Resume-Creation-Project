@@ -26,7 +26,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. User can request a profile for a new role and the system researches current job postings and produces a complete profile file without manual data entry
   2. User can clone an existing profile, tweak a few fields, and use it for a related role without starting from scratch
   3. A newly generated profile contains skill categories, proficiency levels, and interview questions that match what real job postings list for that role
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Create profile-generation-guide.md and update workflow.md Phase 0 generation step (PROF-03)
+- [ ] 01-02-PLAN.md — Add clone-and-tweak path to workflow.md Phase 0 and update profiles/README.md (PROF-04)
 
 ### Phase 2: Job Targeting + Cover Letter
 **Goal**: Users can aim the resume at a specific job posting and generate a matching cover letter
@@ -57,6 +61,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Profile Expansion | 0/? | Not started | - |
+| 1. Profile Expansion | 0/2 | Not started | - |
 | 2. Job Targeting + Cover Letter | 0/? | Not started | - |
 | 3. LinkedIn + Dashboard | 0/? | Not started | - |
