@@ -2,19 +2,27 @@
 
 A Claude-powered system for creating and improving resumes through structured discovery interviews. Produces A+ resumes that land in the top 5-10% of applicants, plus interview prep guides and visual skills matrices.
 
-Works for any industry — the system auto-generates role-specific profiles by researching current job postings.
+Works for any industry — the system auto-generates role-specific profiles by researching current job postings. Handles both experienced professionals and early-career candidates (new grads, career changers) with dedicated tracks.
 
 ---
 
 ## How It Works
 
 1. **Profile Selection** — Pick an existing industry profile or generate one on the fly
-2. **Discovery Interview** — Claude asks questions one at a time to uncover metrics, achievements, and skills
-3. **Resume Transformation** — Generates a quantified, results-focused resume
-4. **Interview Prep** — STAR-format answers for the strongest resume bullets
-5. **Skills Matrix** — Color-coded proficiency breakdown
+2. **Experience Level Detection** — Routes to the right track (experienced or early career)
+3. **Discovery Interview** — Claude asks questions one at a time, tailored to experience level
+4. **Resume Transformation** — Generates a quantified, results-focused resume with self-audit
+5. **Interview Prep** — STAR-format answers (experienced) or coached entry-level responses (early career)
+6. **Skills Matrix** — Color-coded proficiency breakdown
+7. **Score Card** — Grades the final resume against 6 evaluation criteria
 
 All progress is saved incrementally — sessions can be interrupted and resumed.
+
+### Two Tracks
+
+**Experienced (3+ years):** Metrics-driven discovery, Key Achievements section, strict quantification rules, 2-page target.
+
+**Early Career (<3 years, new grads, career changers):** Education-first structure, project-focused discovery, relaxed quantification with transferable skills, coached interview answers, strict 1-page limit.
 
 ---
 
@@ -46,9 +54,11 @@ Loads the previous output, asks what changed, regenerates.
 Resume Creation Project/
 │
 ├── system/                          # Workflow engine
-│   ├── workflow.md                  # Master orchestrator — phases and decision logic
-│   ├── discovery.md                 # Interview process and probing techniques
-│   ├── resume_rules.md             # The 6 evaluation criteria and formatting rules
+│   ├── workflow.md                  # Master orchestrator — phases, routing, and decision logic
+│   ├── discovery.md                 # Interview process (experienced candidates)
+│   ├── discovery_early_career.md   # Interview process (new grads, career changers)
+│   ├── resume_rules.md             # Resume standards (experienced candidates)
+│   ├── resume_rules_early_career.md # Resume standards (early career)
 │   └── output_formats.md           # Specs for each deliverable
 │
 ├── profiles/                        # Industry/role profiles (reusable)

@@ -36,9 +36,23 @@ Before starting the interview, determine which industry profile to use.
 
 ---
 
-## Phase 1: Initial Review
+## Phase 1: Initial Review & Experience Level Detection
 
-Read the candidate's existing resume (if provided) and identify:
+Read the candidate's existing resume (if provided) and determine the **experience level**:
+
+**Early Career** (use early-career track):
+- Less than 3 years of professional experience in the target field
+- Recent graduate or still in school
+- Career changer entering a new field with no relevant experience
+- No existing resume or a very thin one
+
+**Experienced** (use standard track):
+- 3+ years of professional experience in the target field
+- Has multiple roles with quantifiable achievements
+
+Record the experience level in the discovery file: `**Experience Level:** Early Career` or `**Experience Level:** Experienced`
+
+Then identify:
 - Current strengths
 - Gaps and weaknesses
 - Missing quantification
@@ -57,14 +71,23 @@ If no existing resume is provided, note "Starting from scratch" and proceed — 
 
 ## Phase 2: Discovery Interview
 
-Conduct the discovery interview following the process in `system/discovery.md`.
+**Route based on experience level:**
+- **Experienced:** Follow `system/discovery.md`
+- **Early Career:** Follow `system/discovery_early_career.md`
 
-**Critical rules:**
+**Critical rules (both tracks):**
 - Ask questions ONE AT A TIME
 - Save each answer to `candidates/[name]/discovery.md` immediately
 - If the session is interrupted, resume from where you left off by reading the discovery file
+
+**Experienced-specific:**
 - Establish the career narrative and differentiator early — these shape everything that follows
 - If the candidate lists multiple target roles, establish the primary before continuing
+
+**Early-career-specific:**
+- Be encouraging — they may not realize their coursework and projects have resume value
+- Dig into projects and transferable skills from non-industry jobs
+- Help them see that part-time work, volunteer roles, and school projects contain real proof points
 
 → Proceed to Phase 3 when all questions are answered
 
@@ -72,17 +95,26 @@ Conduct the discovery interview following the process in `system/discovery.md`.
 
 ## Phase 3: Resume Transformation
 
-Rewrite the resume following the rules in `system/resume_rules.md`.
+**Route based on experience level:**
+- **Experienced:** Follow `system/resume_rules.md`
+- **Early Career:** Follow `system/resume_rules_early_career.md`
 
 ### 3a. Generate Draft
-1. Build the resume in markdown following the **mandatory section order:**
-   Header → Summary → Key Achievements → Experience → Certifications → Core Competencies
-2. Target the summary and Key Achievements to the **primary target role**
+
+**Experienced — mandatory section order:**
+Header → Summary → Key Achievements → Experience → Certifications → Core Competencies
+
+**Early Career — mandatory section order:**
+Header → Summary → Education → Projects (if strong) → Experience → Certifications & Skills → Activities (if relevant)
+
+1. Build the resume in markdown following the appropriate order
+2. Target the summary to the **primary target role**
 3. Save to `candidates/[name]/output/[Name]_Resume_DRAFT.md`
 
 ### 3b. Self-Audit (Before Showing the Candidate)
-Run the draft through every item in the Final Checklist from `system/resume_rules.md`. Specifically check:
+Run the draft through the Final Checklist from the appropriate rules file.
 
+**Experienced checklist:**
 - [ ] Header includes name + target role title
 - [ ] Summary is targeted to primary role (not generic)
 - [ ] Key Achievements section exists with 4-6 bullets
@@ -95,7 +127,17 @@ Run the draft through every item in the Final Checklist from `system/resume_rule
 - [ ] Section order is correct
 - [ ] No ATS-hostile formatting
 
-**If any item fails, fix it before presenting the draft.** Do not show a draft that violates the system's own rules.
+**Early-career checklist:**
+- [ ] Header includes name + target title (Junior/Aspiring/Entry-Level)
+- [ ] Summary is 2-3 lines with education, best proof point, and what they're seeking
+- [ ] Education is the first content section with degree, GPA (if strong), honors, coursework
+- [ ] At least 2-3 projects/experiences have specific deliverables and tools
+- [ ] Transferable skills extracted from non-industry jobs (with numbers where possible)
+- [ ] No padding (generic memberships, irrelevant coursework, duty-only bullets)
+- [ ] Strictly 1 page
+- [ ] No ATS-hostile formatting
+
+**If any item fails, fix it before presenting the draft.**
 
 ### 3c. Recruiter Eye Test
 Simulate a 7-second recruiter scan. Report to the candidate:
@@ -121,10 +163,21 @@ If the takeaway doesn't match the target role, revise before presenting.
 
 Create an interview prep document following the format in `system/output_formats.md`.
 
+**Experienced:**
 1. Select the 5-7 strongest resume bullets
 2. Write STAR-format answers for each
 3. Include the "biggest mess cleaned up" story from discovery if available
-4. Save to `candidates/[name]/output/[Name]_Interview_Prep.md` and `.docx`
+
+**Early Career:**
+1. Select the 3-5 strongest proof points (projects, internships, transferable experiences)
+2. Write STAR-format answers for each — the "Situation" can be a class assignment or personal project
+3. Add a "Why This Field?" story based on discovery answers
+4. Include 2-3 common entry-level interview questions with coached answers:
+   - "Tell me about yourself" (structured 60-second pitch)
+   - "Why should we hire you over other graduates?" (ties to differentiator)
+   - "Where do you see yourself in 2-3 years?" (shows ambition without overreaching)
+
+Save to `candidates/[name]/output/[Name]_Interview_Prep.md` and `.docx`
 
 → Proceed to Phase 5
 
