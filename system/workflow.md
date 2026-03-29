@@ -224,7 +224,23 @@ Include:
 
 Save to `candidates/[name]/output/[Name]_Score_Card.md`
 
-→ Done
+→ Proceed to Phase 7 (optional — ask the candidate)
+
+---
+
+## Phase 7: LinkedIn Optimization Guide (Optional)
+
+Generate a LinkedIn optimization guide following the format in `system/output_formats.md`.
+
+1. Map the final resume content to LinkedIn sections
+2. Write the Headline options, About section, and Experience entries in first-person voice
+3. Generate the prioritized skills list from the profile and discovery data
+4. Recommend Featured section items and a recommendation request strategy
+5. Extract keywords from the resume, profile, and any job postings for LinkedIn SEO
+
+Save to `candidates/[name]/output/[Name]_LinkedIn_Guide.md`
+
+→ Done (all phases complete)
 
 ---
 
@@ -321,3 +337,24 @@ Only generate a cover letter if the user requests it.
 6. Save as:
    - `candidates/[name]/output/[Name]_Cover_Letter_[Company].md`
    - Convert to DOCX: `pandoc [Name]_Cover_Letter_[Company].md -o [Name]_Cover_Letter_[Company].docx --reference-doc="templates/resume_template.docx"`
+
+---
+
+## Generating the Candidate Dashboard
+
+When the user asks for a dashboard, or after completing all deliverables for a candidate:
+
+1. Scan all directories under `candidates/` (skip `dashboard.html` if it exists)
+2. For each candidate directory, read `discovery.md` to extract:
+   - Name, target role, experience level, profile, status, last updated date
+3. Check `output/` for each deliverable type:
+   - Resume (FINAL.md or FINAL.docx)
+   - Interview Prep (.md or .docx)
+   - Skills Matrix (.html)
+   - Score Card (.md)
+   - Cover Letter (any _Cover_Letter_*.md)
+   - LinkedIn Guide (.md)
+4. If a Score Card exists, extract the Overall score
+5. Generate the dashboard HTML following `system/dashboard_template.md`
+6. Save to `candidates/dashboard.html`
+7. Tell the user: "Dashboard updated — open candidates/dashboard.html in a browser"

@@ -115,7 +115,7 @@ candidates/[name]/
 
 ## Change Log
 
-### 2026-03-29 — Gap closure sprint (14/17 gaps closed)
+### 2026-03-29 — Gap closure sprint (17/17 gaps closed)
 Comprehensive project review, devlog creation, and gap closure:
 - **Housekeeping:** Phase 1 verification confirmed, ROADMAP.md and STATE.md updated
 - **Score Card:** Generated for Bruno Rubio (9/10), example DOCX added to `examples/`
@@ -125,7 +125,8 @@ Comprehensive project review, devlog creation, and gap closure:
 - **Phase 2 complete:** Job targeting workflow added to `workflow.md` (4-step process), cover letter spec added to `output_formats.md`
 - **Web search resolved:** GSD config flags don't affect Claude Code tool availability
 - Marked Cindy Rubio complete, Phase 2 requirements (TARG-01/02/03, DELV-05) all satisfied
-- **Remaining:** Phase 3 (LinkedIn guide, candidate dashboard) — 3 items left
+- **Phase 3 complete:** LinkedIn optimization guide (7-section spec + Phase 7 workflow), candidate dashboard (HTML template + generation workflow)
+- **All 17/17 gaps closed. All 3 phases complete. 31/31 v1 requirements satisfied.**
 
 ### 2026-03-23 — Phase 2 context gathered
 Captured 9 decisions (D-01 through D-09) for Job Targeting + Cover Letter phase. Context document and discussion log created. Phase 2 ready for planning.
@@ -207,19 +208,22 @@ Gaps identified 2026-03-29. Ordered by impact to the core purpose: helping indiv
 
 ### Phase 3: LinkedIn + Dashboard (DELV-06, CAND-04)
 
-- [ ] **Build LinkedIn optimization guide** — Map resume content to LinkedIn sections
-- [ ] **Build candidate dashboard (HTML)** — Overview of all candidates, status, scores, deliverables
-- [ ] **Write and execute Phase 3 plans** — Not yet started
+- [x] **Build LinkedIn optimization guide** — Section 6 in output_formats.md (7 LinkedIn sections), Phase 7 in workflow.md, generate.sh updated
+- [x] **Build candidate dashboard (HTML)** — `dashboard_template.md` with full HTML/CSS template, dashboard generation section in workflow.md
+- [x] **Write and execute Phase 3 plans** — Implemented directly: all system files updated, DELV-06 and CAND-04 satisfied
 
 ---
 
 ## Known Issues / Watch List
 
-- ~~**Score Card never produced**~~ — Fixed: Bruno Rubio scored 9/10, example DOCX in `examples/`.
-- ~~**Early-career track untested**~~ — Fixed: synthetic candidate Alex Martinez validated the full pipeline (discovery → resume → score card).
-- ~~**Web search disabled**~~ — Resolved: config.json flags are GSD-specific, not Claude Code tools. `WebSearch` is natively available.
-- ~~**Single profile**~~ — Fixed: `financial_controller.md` cloned from NetSuite admin, validating the clone-and-tweak protocol.
-- ~~**generate.sh limited**~~ — Fixed: pandoc check added, Score Card in conversion loop, Skills Matrix confirmation.
+All previously identified issues have been resolved:
+- ~~Score Card never produced~~ — Bruno Rubio scored 9/10
+- ~~Early-career track untested~~ — Alex Martinez validated full pipeline
+- ~~Web search disabled~~ — GSD flags don't affect Claude Code tools
+- ~~Single profile~~ — `financial_controller.md` validates clone protocol
+- ~~generate.sh limited~~ — All deliverable types handled
+
+**No open issues.** v1 milestone complete (31/31 requirements).
 
 ---
 *Created: 2026-03-29*

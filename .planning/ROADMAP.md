@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Profile Expansion** - Any role can be profiled; existing profiles can be forked
 - [x] **Phase 2: Job Targeting + Cover Letter** - Resume and cover letter adapt to a specific posting
-- [ ] **Phase 3: LinkedIn + Dashboard** - LinkedIn optimization and a candidate management view
+- [x] **Phase 3: LinkedIn + Dashboard** - LinkedIn optimization and a candidate management view
 
 ## Phase Details
 
@@ -63,4 +63,4 @@ Phases execute in numeric order: 1 → 2 → 3
 |-------|----------------|--------|-----------|
 | 1. Profile Expansion | 2/2 | Complete | 2026-03-24 |
 | 2. Job Targeting + Cover Letter | Complete | Complete | 2026-03-29 |
-| 3. LinkedIn + Dashboard | 0/? | Not started | - |
+| 3. LinkedIn + Dashboard | Complete | Complete | 2026-03-29 |

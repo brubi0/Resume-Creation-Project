@@ -45,14 +45,14 @@ Requirements for current milestone. Validated items are already shipped.
 - [x] **DELV-03**: Skills matrix as HTML with color-coded proficiency levels
 - [x] **DELV-04**: Score card grading resume against 6 evaluation criteria
 - [x] **DELV-05**: Cover letter targeted to specific job postings (optional deliverable)
-- [ ] **DELV-06**: LinkedIn profile optimization guide (optional deliverable)
+- [x] **DELV-06**: LinkedIn profile optimization guide (optional deliverable)
 
 ### Candidate Management
 
 - [x] **CAND-01**: Per-candidate directory structure (input, discovery, output)
 - [x] **CAND-02**: Candidate data gitignored for privacy
 - [x] **CAND-03**: generate.sh resolves candidate output paths automatically
-- [ ] **CAND-04**: HTML dashboard showing all candidates, status, scores, deliverables
+- [x] **CAND-04**: HTML dashboard showing all candidates, status, scores, deliverables
 
 ### Job Targeting
 
@@ -109,11 +109,11 @@ Deferred to future milestone.
 | DELV-03 | Pre-GSD | Complete |
 | DELV-04 | Pre-GSD | Complete |
 | DELV-05 | Phase 2 | Complete |
-| DELV-06 | Phase 3 | Pending |
+| DELV-06 | Phase 3 | Complete |
 | CAND-01 | Pre-GSD | Complete |
 | CAND-02 | Pre-GSD | Complete |
 | CAND-03 | Pre-GSD | Complete |
-| CAND-04 | Phase 3 | Pending |
+| CAND-04 | Phase 3 | Complete |
 | TARG-01 | Phase 2 | Complete |
 | TARG-02 | Phase 2 | Complete |
 | TARG-03 | Phase 2 | Complete |

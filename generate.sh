@@ -57,4 +57,10 @@ if [ -f "$SM" ]; then
   echo "Skills Matrix found: $SM (HTML — open in browser or print to PDF)"
 fi
 
+# LinkedIn Guide is markdown — just confirm it exists
+LG="$OUTDIR/${NAME}_LinkedIn_Guide.md"
+if [ -f "$LG" ]; then
+  echo "LinkedIn Guide found: $LG (markdown — copy content directly to LinkedIn)"
+fi
+
 echo "Done."

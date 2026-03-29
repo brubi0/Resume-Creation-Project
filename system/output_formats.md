@@ -244,3 +244,136 @@ Sincerely,
 - No filler phrases ("I am writing to express my interest...", "I believe I would be a great fit...")
 - Keep it to one page — recruiters do not read long cover letters
 - Every sentence must earn its place — if it does not add new information beyond the resume, cut it
+
+---
+
+## 6. LinkedIn Optimization Guide (Optional)
+
+**Format:** Markdown (no DOCX conversion needed — LinkedIn content is copy-paste)
+
+**File naming:** `[Name]_LinkedIn_Guide.md`
+
+**Purpose:** Map the candidate's resume content to LinkedIn sections so their profile reinforces the resume, not duplicates it. The LinkedIn profile should expand on the resume's narrative, add context that didn't fit on paper, and make the candidate discoverable through LinkedIn search.
+
+**Opt-in:** LinkedIn guide generation is optional. The workflow should ask the candidate whether they want one. If skipped, proceed to the next phase.
+
+**Sources:** Discovery interview data + final resume + selected industry profile
+
+**Structure:**
+
+```markdown
+# LinkedIn Optimization Guide — [Candidate Name]
+
+**Target Role:** [Primary target role]
+**Date:** [date]
+
+---
+
+## 1. Headline
+
+Formula: [Role] | [Differentiator] | [Key Credential]
+Maximum 220 characters. The headline appears everywhere — search results, comments, connection requests — so it must work standalone.
+
+**Option A:** [headline option]
+**Option B:** [headline option]
+**Option C:** [headline option]
+
+**Recommendation:** [which option and why]
+
+---
+
+## 2. About Section
+
+First-person voice. 3-5 paragraphs. The first 3 lines are visible above the fold — make them count.
+
+[Full About section text, ready to copy-paste]
+
+**Above-the-fold preview (first 3 lines):**
+> [The first ~300 characters that appear before "see more"]
+
+---
+
+## 3. Experience
+
+Same roles as the resume, written in first-person. Can be slightly longer than resume bullets — add context that didn't fit on the 2-page resume.
+
+### [Job Title] — [Company]
+[Date range]
+
+- [First-person bullet with expanded context]
+- [First-person bullet with expanded context]
+- ...
+
+*(Repeat for each role)*
+
+---
+
+## 4. Skills (Top 50)
+
+Prioritized by relevance to target role. Pin the top 3 skills on your profile.
+
+**Pin these 3 skills (they appear on your profile card):**
+1. [Skill]
+2. [Skill]
+3. [Skill]
+
+**Request endorsements for these skills:**
+- [Skill] — ask [who and why]
+- [Skill] — ask [who and why]
+- [Skill] — ask [who and why]
+
+**Full skills list (add all 50 in this order):**
+1-50. [Prioritized list of skills]
+
+---
+
+## 5. Featured Section
+
+Showcase 3-5 items. These appear prominently on your profile.
+
+| Item | Type | Why Feature It |
+|------|------|---------------|
+| [Item name] | [Certification / Project / Article / Portfolio] | [What it signals to a recruiter] |
+
+---
+
+## 6. Recommendations Strategy
+
+### Who to Ask
+| Person | Relationship | What to Ask Them to Emphasize |
+|--------|-------------|-------------------------------|
+| [Name/role] | [e.g., Former manager at X] | [Specific skill or achievement] |
+
+### Template Message for Requesting Recommendations
+
+> Hi [Name],
+>
+> [Personalized request template that the candidate can adapt — should reference the specific working relationship and what they'd like the recommender to highlight]
+
+---
+
+## 7. Keywords for LinkedIn SEO
+
+Keywords derived from the profile, resume, and job targeting data. Place these throughout your profile for search visibility.
+
+**Primary keywords (must appear in headline + about + experience):**
+- [keyword]
+
+**Secondary keywords (place in about + experience + skills):**
+- [keyword]
+
+**Placement checklist:**
+- [ ] Headline contains primary keywords
+- [ ] About section uses primary and secondary keywords naturally
+- [ ] Experience entries include relevant keywords in context
+- [ ] Skills list includes all primary and secondary keywords
+```
+
+**Rules:**
+- Write the About section and Experience entries in first-person voice — LinkedIn is personal, not formal
+- The About section must tell the career narrative, not restate the resume summary
+- Headlines must be under 220 characters
+- Skills list should be exactly 50 items (LinkedIn allows up to 50)
+- Featured section should only include items the candidate actually has — do not suggest creating content they haven't written
+- Recommendation requests should be specific about what to emphasize — generic requests get generic recommendations
+- Keywords must appear naturally in context — no keyword stuffing
