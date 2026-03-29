@@ -4,3 +4,11 @@
 
 # Candidate personal data — never commit
 candidates/
+
+# App
+app/.env
+app/backend/__pycache__/
+app/backend/app/__pycache__/
+app/backend/app/routers/__pycache__/
+app/frontend/node_modules/
+app/frontend/dist/
