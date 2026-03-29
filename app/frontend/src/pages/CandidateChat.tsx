@@ -46,8 +46,8 @@ export default function CandidateChat() {
         });
         setMessages(messagesRes.data);
 
-        // If no messages yet, send an initial greeting to kick off the interview
-        if (messagesRes.data.length === 0) {
+        // If no messages yet and session is active, send an initial greeting to kick off the interview
+        if (messagesRes.data.length === 0 && sessionRes.data.status === "active") {
           setSending(true);
           const res = await api.post("/chat/send", {
             content: "Hello, I'd like help with my resume.",
@@ -66,6 +66,14 @@ export default function CandidateChat() {
           const statusRes = await api.get("/chat/status");
           setStatus(statusRes.data);
           setSending(false);
+        }
+        // If session is complete with no messages, go straight to deliverables
+        if (
+          messagesRes.data.length === 0 &&
+          ["complete", "deliverables_generated"].includes(sessionRes.data.status)
+        ) {
+          navigate("/deliverables");
+          return;
         }
       } catch {
         // Session error handled by interceptor
@@ -129,7 +137,8 @@ export default function CandidateChat() {
         </div>
         <div className="flex items-center gap-3">
           {status?.status === "interview_complete" ||
-          status?.status === "deliverables_generated" ? (
+          status?.status === "deliverables_generated" ||
+          status?.status === "complete" ? (
             <button
               onClick={() => navigate("/deliverables")}
               className="rounded-lg bg-brand-green px-3 py-1.5 text-xs font-medium text-white"
