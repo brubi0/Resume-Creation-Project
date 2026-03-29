@@ -182,3 +182,65 @@ pandoc [Name]_Interview_Prep.md -o [Name]_Interview_Prep.docx --reference-doc="t
 - **5-6:** Average — gets read but doesn't stand out
 - **3-4:** Weak — likely skipped after 7-second scan
 - **1-2:** Needs complete rewrite
+
+---
+
+## 5. Cover Letter (Optional)
+
+**Format:** Markdown → DOCX (via pandoc)
+
+**Pandoc command:**
+```bash
+pandoc [Name]_Cover_Letter_[Company].md -o [Name]_Cover_Letter_[Company].docx --reference-doc="templates/resume_template.docx"
+```
+
+**File naming:**
+- `[Name]_Cover_Letter_[Company].md` / `.docx`
+
+**Opt-in:** Cover letter generation is optional. The workflow should ask the candidate whether they want one. If skipped, proceed directly to the next deliverable.
+
+**Length:** 3-4 paragraphs, one page maximum.
+
+**Structure:**
+
+```markdown
+[Candidate Name]
+[City, State] | [Email] | [Phone] | [LinkedIn URL]
+
+[Date]
+
+Dear [Hiring Manager / Hiring Team],
+
+[Opening Hook — Reference the specific company and role by name. State why
+this role caught your attention. Make it clear this letter was written for
+THIS job, not copy-pasted.]
+
+[Body Paragraph 1 — Connect your single strongest achievement to a key
+requirement from the job posting. Use specific numbers/results from the
+discovery data. Mirror the posting's language where natural.]
+
+[Body Paragraph 2 — Connect your differentiator or career narrative to the
+company's needs. Show that you understand what they're trying to accomplish
+and explain why your trajectory makes you the right fit.]
+
+[Closing — Confident call to action. State your availability, express
+genuine enthusiasm, invite next steps. End strong, not passive.]
+
+Sincerely,
+[Candidate Name]
+```
+
+**Tone:** Professional and personal — confident but warm. Never generic. The reader should feel this letter was written specifically for them.
+
+**Sources:** Pulls from discovery interview data:
+- Career narrative and differentiator (from discovery)
+- Biggest win / strongest achievement (from discovery)
+- Job posting keywords and requirements (from the target posting)
+
+**Rules:**
+- Must reference the specific company and role by name — never use placeholders like "your company" without the actual name
+- Opening hook must be specific enough that it could not apply to any other company
+- Body paragraphs must connect candidate data to job posting requirements, not just restate the resume
+- No filler phrases ("I am writing to express my interest...", "I believe I would be a great fit...")
+- Keep it to one page — recruiters do not read long cover letters
+- Every sentence must earn its place — if it does not add new information beyond the resume, cut it

@@ -44,7 +44,7 @@ Requirements for current milestone. Validated items are already shipped.
 - [x] **DELV-02**: Interview prep guide with STAR-format answers for 5-7 strongest bullets
 - [x] **DELV-03**: Skills matrix as HTML with color-coded proficiency levels
 - [x] **DELV-04**: Score card grading resume against 6 evaluation criteria
-- [ ] **DELV-05**: Cover letter targeted to specific job postings (optional deliverable)
+- [x] **DELV-05**: Cover letter targeted to specific job postings (optional deliverable)
 - [ ] **DELV-06**: LinkedIn profile optimization guide (optional deliverable)
 
 ### Candidate Management
@@ -56,9 +56,9 @@ Requirements for current milestone. Validated items are already shipped.
 
 ### Job Targeting
 
-- [ ] **TARG-01**: System can ingest a specific job posting URL or text
-- [ ] **TARG-02**: Keywords extracted from job posting and woven into resume
-- [ ] **TARG-03**: Resume variant generated targeting the specific posting
+- [x] **TARG-01**: System can ingest a specific job posting URL or text
+- [x] **TARG-02**: Keywords extracted from job posting and woven into resume
+- [x] **TARG-03**: Resume variant generated targeting the specific posting
 
 ## v2 Requirements
 
@@ -108,15 +108,15 @@ Deferred to future milestone.
 | DELV-02 | Pre-GSD | Complete |
 | DELV-03 | Pre-GSD | Complete |
 | DELV-04 | Pre-GSD | Complete |
-| DELV-05 | Phase 2 | Pending |
+| DELV-05 | Phase 2 | Complete |
 | DELV-06 | Phase 3 | Pending |
 | CAND-01 | Pre-GSD | Complete |
 | CAND-02 | Pre-GSD | Complete |
 | CAND-03 | Pre-GSD | Complete |
 | CAND-04 | Phase 3 | Pending |
-| TARG-01 | Phase 2 | Pending |
-| TARG-02 | Phase 2 | Pending |
-| TARG-03 | Phase 2 | Pending |
+| TARG-01 | Phase 2 | Complete |
+| TARG-02 | Phase 2 | Complete |
+| TARG-03 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 31 total

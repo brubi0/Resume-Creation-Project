@@ -260,3 +260,64 @@ When the candidate targets a significantly different role:
 3. Rewrite the summary and Key Achievements for that role
 4. Re-prioritize experience bullets (same data, different emphasis)
 5. Save as `[Name]_Resume_[RoleSlug]_FINAL.md`
+
+---
+
+## Generating a Targeted Variant from a Job Posting
+
+When the candidate has a specific job posting they want to apply to, use this workflow to create a tailored resume variant and optional cover letter. This is a lightweight overlay on the existing resume, not a full rewrite.
+
+### Step 1: Ingest the Job Posting
+
+1. Ask the user to paste the full job posting text directly (do not attempt to fetch URLs)
+2. Create the `postings/` directory if it doesn't exist: `candidates/[name]/postings/`
+3. Save the raw posting to `candidates/[name]/postings/[company]_[role].md`
+   - Use snake_case for the filename (e.g., `acme_corp_senior_developer.md`)
+   - Include the date ingested and source URL (if the user provides one) at the top of the file
+
+### Step 2: Extract Keywords
+
+1. Extract 10-15 key terms from the posting, organized into categories:
+   - **Required skills and tools** (e.g., Python, Salesforce, SQL)
+   - **Certifications** (e.g., PMP, CPA, AWS Solutions Architect)
+   - **Soft skills and traits** (e.g., cross-functional collaboration, stakeholder management)
+   - **Priorities and themes** (e.g., cost reduction, digital transformation, scaling)
+2. Compare against the candidate's existing resume:
+   - Mark which keywords the resume already covers
+   - Flag any keywords the resume doesn't naturally support (**gap alert** — the candidate lacks this experience or credential)
+3. Present the extraction to the user for confirmation before proceeding
+   - The user may add, remove, or re-prioritize keywords
+   - Gap-alert items should be discussed — the user decides whether to omit them or address them honestly
+
+### Step 3: Generate Targeted Variant
+
+This is a **lightweight overlay**, not a full rewrite. The goal is to make the existing resume speak the posting's language without fabricating experience.
+
+1. **Summary section**: Rewrite to naturally weave in posting keywords and mirror the role's priorities
+2. **Key Achievements**: Keep unchanged — these are the candidate's strongest proof points
+3. **Experience bullets**: Keep unchanged — same data, same emphasis as the base resume
+4. **Core Competencies**: Keep unchanged
+5. **Keyword integration rules:**
+   - Use exact phrases from the posting where they fit naturally (e.g., if the posting says "cross-functional collaboration" and the candidate has that experience, use that exact phrase)
+   - Paraphrase when the exact phrase would sound forced
+   - Must read like the candidate wrote it — no keyword stuffing, no awkward insertions
+   - Never claim experience or skills the candidate doesn't have
+6. Save as:
+   - `candidates/[name]/output/[Name]_Resume_[Company].md`
+   - Convert to DOCX: `pandoc [Name]_Resume_[Company].md -o [Name]_Resume_[Company].docx --reference-doc="templates/resume_template.docx"`
+
+### Step 4: Generate Cover Letter (Optional)
+
+Only generate a cover letter if the user requests it.
+
+1. Follow the cover letter format in `system/output_formats.md`
+2. Pull from discovery data:
+   - **Career narrative** — the thread that ties the candidate's experience together
+   - **Differentiator** — what makes them uniquely valuable
+   - **Biggest win** — the achievement that proves they deliver
+3. Reference the **specific company and role by name** — this must not read like a generic letter
+4. Connect the candidate's experience to the posting's stated priorities and challenges
+5. Keep it to one page (3-4 paragraphs max)
+6. Save as:
+   - `candidates/[name]/output/[Name]_Cover_Letter_[Company].md`
+   - Convert to DOCX: `pandoc [Name]_Cover_Letter_[Company].md -o [Name]_Cover_Letter_[Company].docx --reference-doc="templates/resume_template.docx"`

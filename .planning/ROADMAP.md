@@ -12,8 +12,8 @@ The foundation is complete (22/31 requirements shipped pre-GSD). Three phases re
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Profile Expansion** - Any role can be profiled; existing profiles can be forked
-- [ ] **Phase 2: Job Targeting + Cover Letter** - Resume and cover letter adapt to a specific posting
+- [x] **Phase 1: Profile Expansion** - Any role can be profiled; existing profiles can be forked
+- [x] **Phase 2: Job Targeting + Cover Letter** - Resume and cover letter adapt to a specific posting
 - [ ] **Phase 3: LinkedIn + Dashboard** - LinkedIn optimization and a candidate management view
 
 ## Phase Details
@@ -61,6 +61,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Profile Expansion | 1/2 | In Progress|  |
-| 2. Job Targeting + Cover Letter | 0/? | Not started | - |
+| 1. Profile Expansion | 2/2 | Complete | 2026-03-24 |
+| 2. Job Targeting + Cover Letter | Complete | Complete | 2026-03-29 |
 | 3. LinkedIn + Dashboard | 0/? | Not started | - |

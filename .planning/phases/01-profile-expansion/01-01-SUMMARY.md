@@ -74,3 +74,11 @@ None — plan executed exactly as written.
 ## Known Stubs
 
 None — both files are complete and actionable. No hardcoded placeholders or TODO markers.
+
+## Self-Check: PASSED
+
+- FOUND: system/profile-generation-guide.md
+- FOUND: system/workflow.md
+- FOUND: .planning/phases/01-profile-expansion/01-01-SUMMARY.md
+- FOUND commit: 096f2d4 (feat(01-01): create system/profile-generation-guide.md)
+- FOUND commit: 6b174be (feat(01-01): update workflow.md Phase 0 step 4)

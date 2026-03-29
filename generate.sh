@@ -8,6 +8,11 @@
 
 set -e
 
+if ! command -v pandoc &> /dev/null; then
+  echo "Error: pandoc is not installed. Install it from https://pandoc.org/installing.html"
+  exit 1
+fi
+
 NAME="${1:?Usage: ./generate.sh <Name> [DRAFT|FINAL]}"
 SUFFIX="${2:-FINAL}"
 TEMPLATE="templates/resume_template.docx"
@@ -29,7 +34,7 @@ fi
 
 echo "Using output directory: $OUTDIR"
 
-for TYPE in Resume Interview_Prep; do
+for TYPE in Resume Interview_Prep Score_Card Cover_Letter; do
   MD="$OUTDIR/${NAME}_${TYPE}_${SUFFIX}.md"
   if [ -f "$MD" ]; then
     DOCX="$OUTDIR/${NAME}_${TYPE}_${SUFFIX}.docx"
@@ -44,6 +49,12 @@ if [ -f "$MD_PLAIN" ]; then
   DOCX_PLAIN="$OUTDIR/${NAME}_Resume.docx"
   echo "Generating $DOCX_PLAIN..."
   pandoc "$MD_PLAIN" -o "$DOCX_PLAIN" --reference-doc="$TEMPLATE"
+fi
+
+# Skills Matrix is already HTML — just confirm it exists
+SM="$OUTDIR/${NAME}_Skills_Matrix.html"
+if [ -f "$SM" ]; then
+  echo "Skills Matrix found: $SM (HTML — open in browser or print to PDF)"
 fi
 
 echo "Done."

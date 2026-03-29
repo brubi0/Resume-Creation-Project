@@ -46,7 +46,7 @@ Every resume produced by this system must make a recruiter stop and call the can
 ## Context
 
 - Built and refined in a single session with extensive resume consultant analysis
-- Two complete candidate examples exist: Bruno Rubio (all 3 deliverables) and Cindy Rubio (resume only)
+- Two complete candidate examples exist: Bruno Rubio (all 3 deliverables) and Cindy Rubio (resume — complete, no additional deliverables needed)
 - The NetSuite Administrator profile was the first and serves as the reference implementation
 - All documents are markdown-based, converted to DOCX via pandoc with a reference template
 - Skills matrices are standalone HTML files with embedded CSS
