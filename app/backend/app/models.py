@@ -45,6 +45,7 @@ class Session(Base):
     phase: Mapped[int] = mapped_column(default=0)
     experience_level: Mapped[str | None] = mapped_column(nullable=True)
     profile_slug: Mapped[str | None] = mapped_column(nullable=True)
+    job_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     discovery_data: Mapped[dict] = mapped_column(
         JSONB, server_default=text("'{}'::jsonb")
     )

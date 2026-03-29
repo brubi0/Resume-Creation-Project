@@ -191,6 +191,17 @@ def build_system_prompt(session: Session) -> str:
                 f"\n## Discovery Data\n```json\n{json.dumps(session.discovery_data, indent=2)}\n```"
             )
 
+    # Inject job description if provided — influences all phases
+    if session.job_description:
+        parts.append(
+            "\n## Target Job Description\n"
+            "The candidate has provided a specific job posting they are targeting. "
+            "Use this to guide your questions, prioritize relevant experience, "
+            "tailor resume language to match the role's requirements, and ensure "
+            "the final resume addresses the key qualifications listed below.\n\n"
+            f"```\n{session.job_description}\n```"
+        )
+
     parts.append(_META_INSTRUCTIONS)
     return "\n\n".join(parts)
 

@@ -63,11 +63,16 @@ class MessageResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JobDescriptionUpdate(BaseModel):
+    job_description: str
+
+
 class SessionResponse(BaseModel):
     id: uuid.UUID
     phase: int
     experience_level: str | None
     profile_slug: str | None
+    job_description: str | None
     status: str
     created_at: datetime
 
@@ -78,6 +83,7 @@ class ChatStatusResponse(BaseModel):
     phase: int
     experience_level: str | None
     profile_slug: str | None
+    job_description: str | None
     status: str
 
 

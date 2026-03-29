@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import Message, Session, User
 from app.schemas import (
     ChatStatusResponse,
+    JobDescriptionUpdate,
     MessageResponse,
     MessageSend,
     SessionResponse,
@@ -102,6 +103,19 @@ async def send_message(
     await db.commit()
     await db.refresh(assistant_msg)
     return assistant_msg
+
+
+@router.patch("/job-description", response_model=SessionResponse)
+async def set_job_description(
+    body: JobDescriptionUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_candidate),
+):
+    session = await get_or_create_session(user, db)
+    session.job_description = body.job_description
+    await db.commit()
+    await db.refresh(session)
+    return session
 
 
 @router.post("/new-session", response_model=SessionResponse)
