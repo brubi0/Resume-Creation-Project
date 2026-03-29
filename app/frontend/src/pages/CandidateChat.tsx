@@ -67,14 +67,6 @@ export default function CandidateChat() {
           setStatus(statusRes.data);
           setSending(false);
         }
-        // If session is complete with no messages, go straight to deliverables
-        if (
-          messagesRes.data.length === 0 &&
-          ["complete", "deliverables_generated"].includes(sessionRes.data.status)
-        ) {
-          navigate("/deliverables");
-          return;
-        }
       } catch {
         // Session error handled by interceptor
       } finally {
@@ -160,32 +152,56 @@ export default function CandidateChat() {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4">
-        {messages.map((msg) => (
-          <ChatMessage
-            key={msg.id}
-            role={msg.role}
-            content={msg.content}
-            timestamp={msg.created_at}
-          />
-        ))}
-
-        {sending && (
-          <div className="mb-3 flex justify-start">
-            <div className="rounded-2xl rounded-bl-md border border-gray-100 bg-white px-4 py-3 shadow-sm">
-              <div className="flex gap-1">
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.1s]" />
-                <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.2s]" />
-              </div>
-            </div>
+        {messages.length === 0 &&
+        ["complete", "deliverables_generated", "interview_complete"].includes(
+          status?.status ?? ""
+        ) ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <p className="mb-2 text-lg font-semibold text-brand-dark">
+              Your interview is complete!
+            </p>
+            <p className="mb-4 text-sm text-gray-500">
+              Your resume and documents are ready for download.
+            </p>
+            <button
+              onClick={() => navigate("/deliverables")}
+              className="rounded-lg bg-brand-green px-4 py-2 text-sm font-medium text-white"
+            >
+              View Deliverables
+            </button>
           </div>
+        ) : (
+          <>
+            {messages.map((msg) => (
+              <ChatMessage
+                key={msg.id}
+                role={msg.role}
+                content={msg.content}
+                timestamp={msg.created_at}
+              />
+            ))}
+
+            {sending && (
+              <div className="mb-3 flex justify-start">
+                <div className="rounded-2xl rounded-bl-md border border-gray-100 bg-white px-4 py-3 shadow-sm">
+                  <div className="flex gap-1">
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400" />
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.1s]" />
+                    <span className="h-2 w-2 animate-bounce rounded-full bg-gray-400 [animation-delay:0.2s]" />
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div ref={bottomRef} />
       </div>
 
-      {/* Input */}
-      <ChatInput onSend={handleSend} disabled={sending} />
+      {/* Input — hide for completed sessions */}
+      {!["complete", "deliverables_generated"].includes(status?.status ?? "") && (
+        <ChatInput onSend={handleSend} disabled={sending} />
+      )}
     </div>
   );
 }
