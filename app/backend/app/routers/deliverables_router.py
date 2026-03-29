@@ -74,6 +74,44 @@ async def download_deliverable(
     )
 
 
+@router.get("/{deliverable_id}/preview")
+async def preview_deliverable(
+    deliverable_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Deliverable).where(Deliverable.id == deliverable_id)
+    )
+    deliverable = result.scalar_one_or_none()
+    if not deliverable:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+
+    # Check access
+    if user.role == "candidate":
+        session_result = await db.execute(
+            select(Session).where(
+                Session.id == deliverable.session_id, Session.user_id == user.id
+            )
+        )
+        if not session_result.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Access denied")
+
+    if not os.path.exists(deliverable.file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    # Only allow preview for text-based files
+    ext = os.path.splitext(deliverable.file_path)[1].lower()
+    if ext not in (".md", ".html", ".txt"):
+        raise HTTPException(status_code=400, detail="File type not previewable")
+
+    with open(deliverable.file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    content_type = "text/html" if ext == ".html" else "text/markdown"
+    return {"content": content, "content_type": content_type, "filename": deliverable.filename}
+
+
 @router.post("/generate", status_code=202)
 async def trigger_generation(
     session_id: uuid.UUID,

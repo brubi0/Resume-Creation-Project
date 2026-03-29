@@ -104,6 +104,29 @@ async def send_message(
     return assistant_msg
 
 
+@router.post("/new-session", response_model=SessionResponse)
+async def start_new_session(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_candidate),
+):
+    # Mark any active/complete sessions as abandoned
+    result = await db.execute(
+        select(Session).where(
+            Session.user_id == user.id,
+            Session.status.notin_(["abandoned"]),
+        )
+    )
+    for old_session in result.scalars().all():
+        old_session.status = "abandoned"
+
+    # Create fresh session
+    session = Session(user_id=user.id)
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
 @router.get("/status", response_model=ChatStatusResponse)
 async def get_status(
     db: AsyncSession = Depends(get_db),

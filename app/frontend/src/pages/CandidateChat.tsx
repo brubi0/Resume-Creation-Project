@@ -109,6 +109,17 @@ export default function CandidateChat() {
     }
   };
 
+  const handleNewSession = async () => {
+    setSending(true);
+    try {
+      await api.post("/chat/new-session");
+      // Reload the page to pick up the fresh session
+      window.location.reload();
+    } catch {
+      setSending(false);
+    }
+  };
+
   if (initializing) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -163,12 +174,20 @@ export default function CandidateChat() {
             <p className="mb-4 text-sm text-gray-500">
               Your resume and documents are ready for download.
             </p>
-            <button
-              onClick={() => navigate("/deliverables")}
-              className="rounded-lg bg-brand-green px-4 py-2 text-sm font-medium text-white"
-            >
-              View Deliverables
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => navigate("/deliverables")}
+                className="rounded-lg bg-brand-green px-4 py-2 text-sm font-medium text-white"
+              >
+                View Deliverables
+              </button>
+              <button
+                onClick={handleNewSession}
+                className="rounded-lg border border-brand-dark px-4 py-2 text-sm font-medium text-brand-dark hover:bg-brand-dark/5"
+              >
+                Start New Interview
+              </button>
+            </div>
           </div>
         ) : (
           <>
