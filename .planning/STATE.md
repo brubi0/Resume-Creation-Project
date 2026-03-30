@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
+milestone: v1.1
+milestone_name: channels-integration
 status: Planning next milestone
-stopped_at: Phase 2 context gathered
-last_updated: "2026-03-29"
+stopped_at: Milestone v1.0 recorded
+last_updated: "2026-03-30"
 progress:
   total_phases: 3
   completed_phases: 1
