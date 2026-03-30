@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to plan
+status: Planning next milestone
 stopped_at: Phase 2 context gathered
 last_updated: "2026-03-29"
 progress:
@@ -57,6 +57,16 @@ Recent decisions affecting current work:
 - [Phase 01]: profile-generation-guide.md is standalone — any Claude instance can follow it without prior context
 - [Phase 01]: 60% overlap threshold chosen as clone vs. generate fresh decision rule — simple enough to apply without analysis
 - [Phase 01]: profiles/README.md cross-references profile-generation-guide.md to link Plans 01-01 and 01-02
+
+### Next Milestone Goals
+Target: Channels integration
+
+- Add `/newcandidate <Full Name>` command to claude-channels Telegram bot
+- Bot generates a secure random password and calls `POST /api/admin/candidates` on the resume-chat admin API
+- Bot re-authenticates on each call (login → JWT → create candidate) to avoid token expiry
+- Bot replies with username (slugified name), password, and the resume-chat login URL
+- Add `RESUME_CHAT_URL` and `RESUME_CHAT_ADMIN_PASSWORD` env vars to claude-channels config
+- New `src/resume-chat.ts` module in claude-channels — isolated HTTP client for resume-chat admin API
 
 ### Pending Todos
 

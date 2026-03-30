@@ -3,6 +3,7 @@ interface Candidate {
   name: string;
   username: string;
   created_at: string;
+  session_id: string | null;
   session_status: string | null;
   session_phase: number | null;
 }
@@ -67,9 +68,9 @@ export default function CandidateList({
               </td>
               <td className="px-4 py-3">
                 <div className="flex gap-2">
-                  {c.session_status === "interview_complete" && (
+                  {c.session_status === "interview_complete" && c.session_id && (
                     <button
-                      onClick={() => onGenerateDeliverables(c.id)}
+                      onClick={() => onGenerateDeliverables(c.session_id!)}
                       className="rounded bg-brand-green px-2 py-1 text-xs text-white hover:bg-opacity-90"
                     >
                       Generate

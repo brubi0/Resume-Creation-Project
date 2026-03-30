@@ -9,6 +9,7 @@ interface Candidate {
   name: string;
   username: string;
   created_at: string;
+  session_id: string | null;
   session_status: string | null;
   session_phase: number | null;
 }
@@ -40,21 +41,10 @@ export default function AdminDashboard() {
     loadCandidates();
   };
 
-  const handleGenerate = async (candidateId: string) => {
-    // Find the candidate's session by looking at their data
-    // For now, we'll use a dedicated admin endpoint
+  const handleGenerate = async (sessionId: string) => {
     try {
-      // Get the candidate's sessions to find the active one
-      const sessionsRes = await api.get(`/admin/candidates`);
-      const candidate = sessionsRes.data.find(
-        (c: Candidate) => c.id === candidateId,
-      );
-      if (candidate?.session_status === "interview_complete") {
-        // We need the session ID — for MVP, trigger via the admin candidates list
-        alert(
-          "Deliverable generation will be available when the session endpoint is ready.",
-        );
-      }
+      await api.post(`/deliverables/generate?session_id=${sessionId}`);
+      loadCandidates();
     } catch {
       alert("Failed to trigger generation");
     }

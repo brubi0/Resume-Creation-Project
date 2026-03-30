@@ -42,6 +42,7 @@ async def list_candidates(
                 name=c.name,
                 username=c.username,
                 created_at=c.created_at,
+                session_id=latest.id if latest else None,
                 session_status=latest.status if latest else None,
                 session_phase=latest.phase if latest else None,
             )

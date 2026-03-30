@@ -40,6 +40,7 @@ class CandidateListItem(BaseModel):
     name: str
     username: str
     created_at: datetime
+    session_id: uuid.UUID | None = None
     session_status: str | None = None
     session_phase: int | None = None
 

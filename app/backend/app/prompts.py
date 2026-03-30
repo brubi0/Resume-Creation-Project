@@ -141,7 +141,19 @@ def build_system_prompt(session: Session) -> str:
 
     elif session.phase == 2:
         # Discovery interview
+        total_questions = 9 if session.experience_level == "early_career" else 12
+        answered = len(session.discovery_data) if session.discovery_data else 0
+        current_q = min(answered + 1, total_questions)
+
         parts.append("\n## Your Task: Discovery Interview (Phase 2)\n")
+        parts.append(
+            f"**STRICT RULE — ONE QUESTION AT A TIME:**\n"
+            f"You are on question {current_q} of {total_questions}. "
+            f"Look at the 'Discovery Data Collected So Far' section to see what has already been answered. "
+            f"Find the FIRST question in the list below that does NOT yet have an answer in the collected data. "
+            f"Ask ONLY that single question. Do NOT ask multiple questions in the same message. "
+            f"Do NOT move on until the candidate has answered the current question.\n"
+        )
         if session.experience_level == "early_career":
             discovery = files.get("system_discovery_early_career", "")
         else:
@@ -156,10 +168,37 @@ def build_system_prompt(session: Session) -> str:
             parts.append(
                 f"\n## Discovery Data Collected So Far\n```json\n{json.dumps(session.discovery_data, indent=2)}\n```"
             )
+        else:
+            parts.append("\n## Discovery Data Collected So Far\nNone yet — start with question 1.")
 
     elif session.phase == 3:
         # Resume transformation
         parts.append("\n## Your Task: Resume Transformation (Phase 3)\n")
+        parts.append(
+            "**MANDATORY PROCESS — follow in order, do not skip steps:**\n\n"
+            "**Step 1 — Build the draft internally.**\n"
+            "Write the full resume in markdown following the rules below. Do not show this to the candidate yet.\n\n"
+            "**Step 2 — Run the self-audit checklist.**\n"
+            "Check every bullet against the Final Checklist in the resume rules:\n"
+            "- Does every bullet start with a strong past-tense action verb?\n"
+            "- Does every bullet have at least one metric (%, $, count, time saved)? If not, cut or rewrite it.\n"
+            "- Is there any task-only language ('Responsible for', 'Helped with', 'Assisted in')? Replace it.\n"
+            "- Are there any weak verbs ('Worked on', 'Participated in', 'Was involved in')? Replace them.\n"
+            "- Does the Summary/Profile section have a clear value proposition with a target role and one differentiator?\n"
+            "- Is the section order correct for the track (experienced: Summary → Experience → Skills → Education)?\n"
+            "- Are dates consistent and in the correct format?\n"
+            "Fix any issues before proceeding.\n\n"
+            "**Step 3 — Run the 7-second recruiter eye test.**\n"
+            "Imagine a recruiter skimming for 7 seconds. Ask yourself:\n"
+            "- Is the target role obvious from the top third of the resume?\n"
+            "- Do the bullets lead with impact, not tasks?\n"
+            "- Would a recruiter be compelled to read further?\n"
+            "If not, revise the top third and the strongest bullets.\n\n"
+            "**Step 4 — Present the polished resume to the candidate.**\n"
+            "Only after completing steps 1-3, present the final resume in markdown. "
+            "Briefly summarize the 2-3 strongest changes you made and why. "
+            "Ask the candidate if they want any adjustments.\n"
+        )
         if session.experience_level == "early_career":
             rules = files.get("system_resume_rules_early_career", "")
         else:
