@@ -6,6 +6,7 @@ interface Candidate {
   session_id: string | null;
   session_status: string | null;
   session_phase: number | null;
+  completed_sets: number;
 }
 
 const PHASE_NAMES = [
@@ -64,6 +65,11 @@ export default function CandidateList({
               </td>
               <td className="px-4 py-3">
                 <StatusBadge status={c.session_status} />
+                {c.completed_sets > 1 && (
+                  <p className="mt-0.5 text-xs text-gray-400">
+                    {c.completed_sets} resume sets
+                  </p>
+                )}
               </td>
               <td className="px-4 py-3 text-gray-500">
                 {new Date(c.created_at).toLocaleDateString()}

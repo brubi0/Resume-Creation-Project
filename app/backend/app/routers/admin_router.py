@@ -37,20 +37,35 @@ async def list_candidates(
         .order_by(User.created_at.desc())
     )
     candidates = result.scalars().all()
+    STATUS_PRIORITY = {
+        "deliverables_generated": 0,
+        "interview_complete": 1,
+        "active": 2,
+        "abandoned": 3,
+    }
+
     items = []
     for c in candidates:
-        latest = None
+        best = None
+        completed_sets = 0
         if c.sessions:
-            latest = max(c.sessions, key=lambda s: s.created_at)
+            completed_sets = sum(
+                1 for s in c.sessions if s.status == "deliverables_generated"
+            )
+            best = min(
+                c.sessions,
+                key=lambda s: (STATUS_PRIORITY.get(s.status, 99), -s.created_at.timestamp()),
+            )
         items.append(
             CandidateListItem(
                 id=c.id,
                 name=c.name,
                 username=c.username,
                 created_at=c.created_at,
-                session_id=latest.id if latest else None,
-                session_status=latest.status if latest else None,
-                session_phase=latest.phase if latest else None,
+                session_id=best.id if best else None,
+                session_status=best.status if best else None,
+                session_phase=best.phase if best else None,
+                completed_sets=completed_sets,
             )
         )
     return items

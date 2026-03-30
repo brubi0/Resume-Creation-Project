@@ -43,6 +43,7 @@ class CandidateListItem(BaseModel):
     session_id: uuid.UUID | None = None
     session_status: str | None = None
     session_phase: int | None = None
+    completed_sets: int = 0
 
     model_config = {"from_attributes": True}
 

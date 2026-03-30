@@ -14,6 +14,7 @@ interface Candidate {
   session_id: string | null;
   session_status: string | null;
   session_phase: number | null;
+  completed_sets: number;
 }
 
 export default function AdminDashboard() {
