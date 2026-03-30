@@ -35,7 +35,7 @@ export default function DeliverablesPage() {
   // Extract company from targeted filename e.g. "Bruno_Rubio_Resume_Acme_Corp_NetSuite.md"
   function targetLabel(d: Deliverable): string {
     const match = d.filename.match(/Resume_(.+?)\.(md|docx)$/) ?? d.filename.match(/Cover_Letter_(.+?)\.(md|docx)$/);
-    return match ? match[1].replace(/_/g, " ") : "Targeted";
+    return match?.[1]?.replace(/_/g, " ") ?? "Targeted";
   }
 
   // Build ordered groups: key → deliverables[]
