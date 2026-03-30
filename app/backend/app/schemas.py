@@ -112,5 +112,11 @@ class ProfileItem(BaseModel):
     target_roles: str = ""
 
 
+class ProfileGenerateRequest(BaseModel):
+    role_name: str
+    industry: str = ""
+    must_have_tools: str = ""
+
+
 class ProfileSelect(BaseModel):
     profile_slug: str

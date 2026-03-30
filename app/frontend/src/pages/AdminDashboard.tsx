@@ -3,6 +3,7 @@ import api from "../api";
 import { useAuth } from "../auth-context";
 import CandidateList from "../components/CandidateList";
 import CreateCandidateModal from "../components/CreateCandidateModal";
+import GenerateProfileModal from "../components/GenerateProfileModal";
 
 interface Candidate {
   id: string;
@@ -18,6 +19,8 @@ export default function AdminDashboard() {
   const { logout } = useAuth();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showGenerateProfile, setShowGenerateProfile] = useState(false);
+  const [profileBanner, setProfileBanner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadCandidates = useCallback(async () => {
@@ -64,6 +67,12 @@ export default function AdminDashboard() {
           </div>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setShowGenerateProfile(true)}
+              className="rounded-lg border border-brand-dark px-4 py-2 text-sm font-medium text-brand-dark hover:bg-brand-dark/5"
+            >
+              + Generate Profile
+            </button>
+            <button
               onClick={() => setShowCreate(true)}
               className="rounded-lg bg-brand-dark px-4 py-2 text-sm font-medium text-white hover:bg-opacity-90"
             >
@@ -80,6 +89,17 @@ export default function AdminDashboard() {
       </header>
 
       <main className="mx-auto max-w-5xl px-6 py-6">
+        {profileBanner && (
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-brand-green/40 bg-brand-green/10 px-4 py-3">
+            <p className="text-sm text-brand-dark">{profileBanner}</p>
+            <button
+              onClick={() => setProfileBanner(null)}
+              className="ml-4 text-xs text-gray-400 hover:text-gray-600"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
         {/* Stats */}
         <div className="mb-6 grid grid-cols-3 gap-4">
           <div className="rounded-xl bg-white p-4 shadow-sm">
@@ -121,6 +141,18 @@ export default function AdminDashboard() {
           )}
         </div>
       </main>
+
+      {showGenerateProfile && (
+        <GenerateProfileModal
+          onCreated={(profile) => {
+            setShowGenerateProfile(false);
+            setProfileBanner(
+              `Profile "${profile.name}" generated and saved — candidates can now select it.`
+            );
+          }}
+          onClose={() => setShowGenerateProfile(false)}
+        />
+      )}
 
       {showCreate && (
         <CreateCandidateModal

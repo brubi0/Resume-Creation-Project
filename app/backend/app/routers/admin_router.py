@@ -1,5 +1,7 @@
+import os
 import re
 
+import anthropic
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +11,11 @@ from app.auth import hash_password, require_admin
 from app.config import settings
 from app.database import get_db
 from app.models import Session, User
-from app.schemas import CandidateCreate, CandidateListItem, ProfileItem
+from app.prompts import get_profile_metadata, reload_system_files
+from app.schemas import CandidateCreate, CandidateListItem, ProfileGenerateRequest, ProfileItem
+
+_claude = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+_GENERATE_MODEL = "claude-sonnet-4-20250514"
 
 router = APIRouter()
 
@@ -100,27 +106,89 @@ async def delete_candidate(
 
 @router.get("/profiles", response_model=list[ProfileItem])
 async def list_profiles(_admin: User = Depends(require_admin)):
-    import os
+    return get_profile_metadata()
 
-    profiles = []
-    profiles_dir = settings.PROFILES_DIR
-    if not os.path.isdir(profiles_dir):
-        return profiles
-    for fname in sorted(os.listdir(profiles_dir)):
-        if not fname.endswith(".md") or fname == "README.md":
-            continue
-        slug = fname.replace(".md", "")
-        name = slug.replace("_", " ").title()
-        # Try to extract the actual name from the file header
-        fpath = os.path.join(profiles_dir, fname)
-        with open(fpath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith("# Profile:"):
-                    name = line.replace("# Profile:", "").strip()
-                    break
-                if line.startswith("# "):
-                    name = line.lstrip("# ").strip()
-                    break
-        profiles.append(ProfileItem(slug=slug, name=name))
-    return profiles
+
+@router.post("/profiles/generate", response_model=ProfileItem)
+async def generate_profile(
+    body: ProfileGenerateRequest,
+    _admin: User = Depends(require_admin),
+):
+    """Generate a new role profile using Claude + web search, save it to disk."""
+    guide_path = os.path.join(settings.SYSTEM_DIR, "profile-generation-guide.md")
+    example_path = os.path.join(settings.PROFILES_DIR, "netsuite_administrator.md")
+
+    guide = ""
+    if os.path.exists(guide_path):
+        with open(guide_path, "r", encoding="utf-8") as f:
+            guide = f.read()
+
+    example = ""
+    if os.path.exists(example_path):
+        with open(example_path, "r", encoding="utf-8") as f:
+            example = f.read()
+
+    system_prompt = (
+        "You are a resume consultant generating an industry skills profile for a web-based resume tool.\n\n"
+        "Follow this generation guide exactly:\n\n"
+        f"{guide}\n\n"
+        "Use this profile as your structural template — your output must match this format precisely:\n\n"
+        f"{example}\n\n"
+        "After researching (via web search or training knowledge), output ONLY the complete profile "
+        "in markdown — starting with '# Profile:' and nothing before it. No explanation, no preamble."
+    )
+
+    parts = [f"Role: {body.role_name}"]
+    if body.industry:
+        parts.append(f"Industry: {body.industry}")
+    if body.must_have_tools:
+        parts.append(f"Must-have tools/certs: {body.must_have_tools}")
+    user_prompt = "Generate a complete skills profile for:\n" + "\n".join(parts)
+
+    messages: list[dict] = [{"role": "user", "content": user_prompt}]
+
+    # Agentic loop — Claude may call web_search multiple times
+    MAX_ITERATIONS = 8
+    profile_text = ""
+    for _ in range(MAX_ITERATIONS):
+        response = _claude.messages.create(
+            model=_GENERATE_MODEL,
+            max_tokens=8192,
+            system=system_prompt,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=messages,
+        )
+
+        if response.stop_reason == "end_turn":
+            # Extract text blocks
+            for block in response.content:
+                if hasattr(block, "text"):
+                    profile_text += block.text
+            break
+        elif response.stop_reason == "tool_use":
+            # Append assistant turn and loop — web_search is server-side
+            messages.append({"role": "assistant", "content": response.content})
+        else:
+            break
+
+    # Strip anything before the profile header
+    marker = "# Profile:"
+    idx = profile_text.find(marker)
+    if idx == -1:
+        raise HTTPException(status_code=500, detail="Claude did not return a valid profile.")
+    profile_text = profile_text[idx:].strip()
+
+    # Derive slug from role_name
+    slug = re.sub(r"[^a-z0-9]+", "_", body.role_name.lower()).strip("_")
+    profile_path = os.path.join(settings.PROFILES_DIR, f"{slug}.md")
+    with open(profile_path, "w", encoding="utf-8") as f:
+        f.write(profile_text)
+
+    # Reload cache so new profile appears immediately
+    reload_system_files()
+
+    # Parse metadata from generated file
+    meta = next((p for p in get_profile_metadata() if p["slug"] == slug), None)
+    if meta:
+        return ProfileItem(**meta)
+    return ProfileItem(slug=slug, name=body.role_name)

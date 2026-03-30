@@ -31,7 +31,7 @@ services:
       CORS_ORIGINS: https://resume.urkuconsulting.com,http://localhost:5173
     volumes:
       - ../system:/app/system:ro
-      - ../profiles:/app/profiles:ro
+      - ../profiles:/app/profiles
       - ../templates:/app/templates:ro
       - deliverables:/app/deliverables
     depends_on:
