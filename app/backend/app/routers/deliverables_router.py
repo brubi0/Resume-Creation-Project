@@ -26,16 +26,16 @@ async def list_deliverables(
             select(Deliverable).order_by(Deliverable.created_at.desc())
         )
     else:
-        # Candidate sees only their own
+        # Candidate sees deliverables from all their sessions
         session_result = await db.execute(
-            select(Session).where(Session.user_id == user.id)
+            select(Session.id).where(Session.user_id == user.id)
         )
-        session = session_result.scalar_one_or_none()
-        if not session:
+        session_ids = [row[0] for row in session_result.all()]
+        if not session_ids:
             return []
         result = await db.execute(
             select(Deliverable)
-            .where(Deliverable.session_id == session.id)
+            .where(Deliverable.session_id.in_(session_ids))
             .order_by(Deliverable.created_at.desc())
         )
     return result.scalars().all()

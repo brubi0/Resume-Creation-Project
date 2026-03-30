@@ -123,11 +123,11 @@ async def start_new_session(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_candidate),
 ):
-    # Mark any active/complete sessions as abandoned
+    # Mark only active sessions as abandoned — preserve completed ones
     result = await db.execute(
         select(Session).where(
             Session.user_id == user.id,
-            Session.status.notin_(["abandoned"]),
+            Session.status == "active",
         )
     )
     for old_session in result.scalars().all():
@@ -151,5 +151,6 @@ async def get_status(
         phase=session.phase,
         experience_level=session.experience_level,
         profile_slug=session.profile_slug,
+        job_description=session.job_description,
         status=session.status,
     )
