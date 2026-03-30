@@ -9,11 +9,14 @@ from app.claude_service import chat_with_claude
 from app.database import get_db
 from app.discovery_writer import write_discovery_md
 from app.models import Message, Session, User
+from app.prompts import get_profile_metadata
 from app.schemas import (
     ChatStatusResponse,
     JobDescriptionUpdate,
     MessageResponse,
     MessageSend,
+    ProfileItem,
+    ProfileSelect,
     SessionResponse,
 )
 
@@ -147,6 +150,31 @@ async def start_new_session(
     # Create fresh session
     session = Session(user_id=user.id)
     db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+@router.get("/profiles", response_model=list[ProfileItem])
+async def list_profiles(
+    user: User = Depends(require_candidate),
+):
+    """Return all available role profiles for the candidate to choose from."""
+    return get_profile_metadata()
+
+
+@router.patch("/profile", response_model=SessionResponse)
+async def select_profile(
+    body: ProfileSelect,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_candidate),
+):
+    """Set the profile on the session and advance to Phase 1, skipping Phase 0 conversation."""
+    session = await get_or_create_session(user, db)
+    session.profile_slug = body.profile_slug
+    # Advance past Phase 0 — profile is already chosen
+    if session.phase == 0:
+        session.phase = 1
     await db.commit()
     await db.refresh(session)
     return session

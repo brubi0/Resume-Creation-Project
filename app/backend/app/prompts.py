@@ -63,6 +63,32 @@ def get_available_profiles() -> list[str]:
     ]
 
 
+def get_profile_metadata() -> list[dict]:
+    """Return list of dicts with slug, name, industry, and target_roles parsed from each profile."""
+    files = _load_system_files()
+    result = []
+    for key, content in files.items():
+        if not key.startswith("profile_"):
+            continue
+        slug = key[len("profile_"):]
+        name = slug.replace("_", " ").title()
+        industry = ""
+        target_roles = ""
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("# Profile:"):
+                name = line[len("# Profile:"):].strip()
+            elif line.startswith("**Industry:**"):
+                industry = line[len("**Industry:**"):].strip()
+            elif line.startswith("**Target Roles:**"):
+                target_roles = line[len("**Target Roles:**"):].strip()
+        result.append(
+            {"slug": slug, "name": name, "industry": industry, "target_roles": target_roles}
+        )
+    result.sort(key=lambda x: x["name"])
+    return result
+
+
 META_PATTERN = re.compile(r"<!--META:(.*?)-->", re.DOTALL)
 
 

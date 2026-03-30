@@ -108,3 +108,9 @@ class DeliverableResponse(BaseModel):
 class ProfileItem(BaseModel):
     slug: str
     name: str
+    industry: str = ""
+    target_roles: str = ""
+
+
+class ProfileSelect(BaseModel):
+    profile_slug: str

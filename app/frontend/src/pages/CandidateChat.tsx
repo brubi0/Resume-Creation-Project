@@ -6,6 +6,7 @@ import PhaseIndicator from "../components/PhaseIndicator";
 import ChatMessage from "../components/ChatMessage";
 import ChatInput from "../components/ChatInput";
 import JobDescriptionModal from "../components/JobDescriptionModal";
+import ProfilePickerModal from "../components/ProfilePickerModal";
 import ResumeUploadModal from "../components/ResumeUploadModal";
 
 interface Message {
@@ -34,13 +35,16 @@ export default function CandidateChat() {
   const [sending, setSending] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const [showResumeModal, setShowResumeModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [showJdModal, setShowJdModal] = useState(false);
   const [showJdView, setShowJdView] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const isComplete = COMPLETE_STATUSES.includes(status?.status ?? "");
+  // "New session" = active with no messages yet, regardless of phase
+  // (phase may be 1 if the candidate pre-selected a profile)
   const isNewSession =
-    status?.status === "active" && status?.phase === 0 && messages.length === 0;
+    status?.status === "active" && messages.length === 0;
 
   // Load session and messages on mount
   useEffect(() => {
@@ -59,13 +63,15 @@ export default function CandidateChat() {
         });
         setMessages(messagesRes.data);
 
-        // New active session with no messages — show resume upload modal first
-        if (
-          messagesRes.data.length === 0 &&
-          sessionRes.data.status === "active" &&
-          sessionRes.data.phase === 0
-        ) {
-          setShowResumeModal(true);
+        // New active session with no messages — run onboarding modals
+        if (messagesRes.data.length === 0 && sessionRes.data.status === "active") {
+          if (sessionRes.data.phase === 0) {
+            // Full flow: resume → profile → JD → start
+            setShowResumeModal(true);
+          } else if (sessionRes.data.phase === 1) {
+            // Profile already chosen (e.g. reloaded after picking profile) — go straight to JD
+            setShowJdModal(true);
+          }
         }
       } catch {
         // Session error handled by interceptor
@@ -83,6 +89,11 @@ export default function CandidateChat() {
 
   const handleResumeDone = () => {
     setShowResumeModal(false);
+    setShowProfileModal(true);
+  };
+
+  const handleProfileDone = () => {
+    setShowProfileModal(false);
     setShowJdModal(true);
   };
 
@@ -191,6 +202,14 @@ export default function CandidateChat() {
       {/* Resume Upload Modal — shown first for new sessions */}
       {showResumeModal && (
         <ResumeUploadModal onDone={handleResumeDone} />
+      )}
+
+      {/* Profile Picker — shown after resume upload for new sessions */}
+      {showProfileModal && (
+        <ProfilePickerModal
+          onSelect={handleProfileDone}
+          onSkip={handleProfileDone}
+        />
       )}
 
       {/* JD Modal — shown for new sessions or mid-interview add/edit */}
