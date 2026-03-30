@@ -5,6 +5,9 @@
 # Candidate personal data — never commit
 candidates/
 
+# Credentials — never commit
+CREDENTIALS.md
+
 # App
 app/.env
 app/backend/__pycache__/
