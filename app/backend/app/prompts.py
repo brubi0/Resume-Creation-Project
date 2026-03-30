@@ -7,6 +7,20 @@ from app.config import settings
 from app.models import Session
 
 
+def _format_discovery_for_prompt(discovery_data: dict) -> str:
+    """Format discovery_data as readable markdown for Claude context."""
+    if not discovery_data:
+        return "None yet — start with question 1."
+    lines = []
+    for key, value in discovery_data.items():
+        label = key.replace("_", " ").title()
+        if isinstance(value, (dict, list)):
+            lines.append(f"- **{label}:** {json.dumps(value)}")
+        else:
+            lines.append(f"- **{label}:** {value}")
+    return "\n".join(lines)
+
+
 @lru_cache(maxsize=1)
 def _load_system_files() -> dict[str, str]:
     """Load all markdown files from system/ and profiles/ directories."""
@@ -153,6 +167,13 @@ def build_system_prompt(session: Session) -> str:
         current_q = min(answered + 1, total_questions)
 
         parts.append("\n## Your Task: Discovery Interview (Phase 2)\n")
+        resuming = answered > 0
+        if resuming:
+            parts.append(
+                f"**RESUMING SESSION** — The candidate has already answered {answered} question(s). "
+                f"Do NOT re-ask questions that are already answered (see 'Discovery Data Collected So Far'). "
+                f"Pick up exactly where you left off.\n"
+            )
         parts.append(
             f"**STRICT RULE — ONE QUESTION AT A TIME:**\n"
             f"You are on question {current_q} of {total_questions}. "
@@ -175,12 +196,8 @@ def build_system_prompt(session: Session) -> str:
             parts.append(
                 f"\n## Candidate's Existing Resume\n```\n{session.resume_text}\n```"
             )
-        if session.discovery_data:
-            parts.append(
-                f"\n## Discovery Data Collected So Far\n```json\n{json.dumps(session.discovery_data, indent=2)}\n```"
-            )
-        else:
-            parts.append("\n## Discovery Data Collected So Far\nNone yet — start with question 1.")
+        formatted = _format_discovery_for_prompt(session.discovery_data or {})
+        parts.append(f"\n## Discovery Data Collected So Far\n{formatted}")
 
     elif session.phase == 3:
         # Resume transformation

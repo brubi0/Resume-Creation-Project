@@ -5,6 +5,7 @@ import subprocess
 import anthropic
 
 from app.config import settings
+from app.discovery_writer import read_discovery_md, write_discovery_md
 from app.models import Deliverable, Message, Session
 from app.prompts import _load_system_files
 
@@ -29,6 +30,10 @@ async def generate_all_deliverables(session: Session, db) -> None:
     files = _load_system_files()
     discovery_json = json.dumps(session.discovery_data or {}, indent=2)
 
+    # Ensure discovery.md is current, then read it for richer prompt context
+    write_discovery_md(session)
+    discovery_md = read_discovery_md(session) or f"```json\n{discovery_json}\n```"
+
     # Get resume rules based on experience level
     if session.experience_level == "early_career":
         rules = files.get("system_resume_rules_early_career", "")
@@ -48,7 +53,7 @@ async def generate_all_deliverables(session: Session, db) -> None:
     # --- Generate Resume ---
     resume_md = await _generate_with_claude(
         system=f"You are a resume writer. Generate a complete resume in markdown.\n\n{rules}\n\n{output_formats}",
-        user_content=f"Generate the final resume based on this discovery data:\n```json\n{discovery_json}\n```",
+        user_content=f"Generate the final resume based on this discovery data:\n\n{discovery_md}",
     )
     resume_md_path = os.path.join(session_dir, f"{safe_name}_Resume_FINAL.md")
     _write_file(resume_md_path, resume_md)
@@ -64,7 +69,7 @@ async def generate_all_deliverables(session: Session, db) -> None:
     # --- Generate Interview Prep ---
     prep_md = await _generate_with_claude(
         system=f"You are an interview coach. Generate an interview prep guide.\n\n{output_formats}",
-        user_content=f"Generate interview prep based on this discovery data:\n```json\n{discovery_json}\n```\n\nResume:\n{resume_md}",
+        user_content=f"Generate interview prep based on this discovery data:\n\n{discovery_md}\n\nResume:\n{resume_md}",
     )
     prep_md_path = os.path.join(session_dir, f"{safe_name}_Interview_Prep.md")
     _write_file(prep_md_path, prep_md)
@@ -74,7 +79,7 @@ async def generate_all_deliverables(session: Session, db) -> None:
     profile = files.get(f"profile_{session.profile_slug}", "") if session.profile_slug else ""
     matrix_html = await _generate_with_claude(
         system=f"Generate a skills matrix as a complete HTML file with embedded CSS.\n\n{output_formats}\n\nProfile:\n{profile}",
-        user_content=f"Generate the skills matrix based on:\n```json\n{discovery_json}\n```",
+        user_content=f"Generate the skills matrix based on:\n\n{discovery_md}",
     )
     matrix_path = os.path.join(session_dir, f"{safe_name}_Skills_Matrix.html")
     _write_file(matrix_path, matrix_html)

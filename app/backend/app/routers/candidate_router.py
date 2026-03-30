@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_candidate
 from app.claude_service import chat_with_claude
 from app.database import get_db
+from app.discovery_writer import write_discovery_md
 from app.models import Message, Session, User
 from app.schemas import (
     ChatStatusResponse,
@@ -104,6 +105,14 @@ async def send_message(
 
     await db.commit()
     await db.refresh(assistant_msg)
+
+    # Write discovery.md to disk whenever discovery data or phase changed
+    if "discovery_data" in session_updates or "phase" in session_updates:
+        try:
+            write_discovery_md(session)
+        except Exception:
+            pass  # non-fatal — DB is the source of truth
+
     return assistant_msg
 
 
