@@ -1,5 +1,25 @@
 # Project Milestones: Resume Creation Project
 
+## v1.1 Channels Integration (Shipped: 2026-03-30)
+
+**Delivered:** `/newcandidate <Full Name>` Telegram command creates a resume-chat candidate account and returns credentials instantly.
+
+**Key accomplishments:**
+- New `src/resume-chat.ts` module in claude-channels — isolated HTTP client, re-authenticates on every call
+- `/newcandidate` command added to bot (command #18) — generates secure 16-char password, calls admin API, replies with username + password + URL
+- `RESUME_CHAT_URL` + `RESUME_CHAT_ADMIN_PASSWORD` added to config and `.env`
+- Resume Chat added to monitored sites (5/5 healthy on first check)
+
+**Stats:**
+- 3 files modified in claude-channels (resume-chat.ts created, config.ts, bot.ts)
+- 0 commits (no git repo in claude-channels — deployed directly via PM2)
+
+**Git range:** N/A (claude-channels not in git)
+
+**What's next:** To be determined
+
+---
+
 ## v1.0 Resume Chat (Shipped: 2026-03-30)
 
 **Delivered:** Full-stack web app for structured resume discovery interviews, producing A+ resumes, interview prep, skills matrices, and score cards — for any role, any experience level.
