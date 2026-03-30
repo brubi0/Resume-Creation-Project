@@ -66,6 +66,9 @@ class Session(Base):
     deliverables: Mapped[list["Deliverable"]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )
+    postings: Mapped[list["Posting"]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
 
 
 class Message(Base):
@@ -88,6 +91,25 @@ class Message(Base):
     )
 
     session: Mapped["Session"] = relationship(back_populates="messages")
+
+
+class Posting(Base):
+    __tablename__ = "postings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+    )
+    company: Mapped[str] = mapped_column(nullable=False)
+    role: Mapped[str] = mapped_column(nullable=False)
+    posting_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        default=lambda: datetime.utcnow()
+    )
+
+    session: Mapped["Session"] = relationship(back_populates="postings")
 
 
 class Deliverable(Base):

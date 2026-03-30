@@ -22,12 +22,14 @@ interface Props {
   candidates: Candidate[];
   onDelete: (id: string) => void;
   onGenerateDeliverables: (id: string) => void;
+  onTarget: (candidate: Candidate) => void;
 }
 
 export default function CandidateList({
   candidates,
   onDelete,
   onGenerateDeliverables,
+  onTarget,
 }: Props) {
   if (candidates.length === 0) {
     return (
@@ -74,6 +76,14 @@ export default function CandidateList({
                       className="rounded bg-brand-green px-2 py-1 text-xs text-white hover:bg-opacity-90"
                     >
                       Generate
+                    </button>
+                  )}
+                  {c.session_status === "deliverables_generated" && c.session_id && (
+                    <button
+                      onClick={() => onTarget(c)}
+                      className="rounded bg-brand-gold px-2 py-1 text-xs text-white hover:bg-opacity-90"
+                    >
+                      Target
                     </button>
                   )}
                   <button

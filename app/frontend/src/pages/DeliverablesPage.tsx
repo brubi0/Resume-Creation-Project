@@ -29,12 +29,22 @@ export default function DeliverablesPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  // Targeted deliverable types
+  const TARGETED_TYPES = new Set(["resume_targeted_md", "resume_targeted_docx", "cover_letter_md", "cover_letter_docx"]);
+
+  // Extract company from targeted filename e.g. "Bruno_Rubio_Resume_Acme_Corp_NetSuite.md"
+  function targetLabel(d: Deliverable): string {
+    const match = d.filename.match(/Resume_(.+?)\.(md|docx)$/) ?? d.filename.match(/Cover_Letter_(.+?)\.(md|docx)$/);
+    return match ? match[1].replace(/_/g, " ") : "Targeted";
+  }
+
   // Build ordered groups: key → deliverables[]
   const groups = deliverables.reduce<Map<GroupKey, Deliverable[]>>((acc, d) => {
-    const key =
+    const baseKey =
       user?.role === "admin"
         ? `${d.candidate_name} — ${d.target_role}`
         : d.target_role;
+    const key = TARGETED_TYPES.has(d.type) ? `${baseKey} → ${targetLabel(d)}` : baseKey;
     if (!acc.has(key)) acc.set(key, []);
     acc.get(key)!.push(d);
     return acc;

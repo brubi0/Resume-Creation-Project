@@ -112,6 +112,17 @@ class DeliverableWithContext(BaseModel):
     target_role: str
 
 
+# --- Targeting ---
+
+
+class TargetRequest(BaseModel):
+    session_id: uuid.UUID
+    company: str
+    role: str
+    posting_text: str
+    include_cover_letter: bool = False
+
+
 # --- Profiles ---
 
 

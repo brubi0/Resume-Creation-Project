@@ -4,6 +4,7 @@ import { useAuth } from "../auth-context";
 import CandidateList from "../components/CandidateList";
 import CreateCandidateModal from "../components/CreateCandidateModal";
 import GenerateProfileModal from "../components/GenerateProfileModal";
+import TargetingModal from "../components/TargetingModal";
 
 interface Candidate {
   id: string;
@@ -20,6 +21,7 @@ export default function AdminDashboard() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showGenerateProfile, setShowGenerateProfile] = useState(false);
+  const [targetingCandidate, setTargetingCandidate] = useState<Candidate | null>(null);
   const [profileBanner, setProfileBanner] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -137,6 +139,7 @@ export default function AdminDashboard() {
               candidates={candidates}
               onDelete={handleDelete}
               onGenerateDeliverables={handleGenerate}
+              onTarget={setTargetingCandidate}
             />
           )}
         </div>
@@ -161,6 +164,18 @@ export default function AdminDashboard() {
             loadCandidates();
           }}
           onClose={() => setShowCreate(false)}
+        />
+      )}
+
+      {targetingCandidate && (
+        <TargetingModal
+          sessionId={targetingCandidate.session_id!}
+          candidateName={targetingCandidate.name}
+          onDone={() => {
+            setTargetingCandidate(null);
+            setProfileBanner(`Targeted resume generated for ${targetingCandidate.name}.`);
+          }}
+          onClose={() => setTargetingCandidate(null)}
         />
       )}
     </div>

@@ -8,10 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.deliverables import generate_all_deliverables
-from app.models import Deliverable, Session, User
+from app.deliverables import generate_all_deliverables, generate_targeted_deliverables
+from app.models import Deliverable, Posting, Session, User
 from app.prompts import get_profile_metadata
-from app.schemas import DeliverableResponse, DeliverableWithContext
+from app.schemas import DeliverableResponse, DeliverableWithContext, TargetRequest
 
 router = APIRouter()
 
@@ -152,3 +152,35 @@ async def trigger_generation(
 
     await generate_all_deliverables(session, db)
     return {"detail": "Deliverable generation started"}
+
+
+@router.post("/target", status_code=202)
+async def trigger_targeting(
+    body: TargetRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    result = await db.execute(select(Session).where(Session.id == body.session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Save posting for reference
+    posting = Posting(
+        session_id=session.id,
+        company=body.company,
+        role=body.role,
+        posting_text=body.posting_text,
+    )
+    db.add(posting)
+    await db.flush()
+
+    await generate_targeted_deliverables(
+        session=session,
+        posting_company=body.company,
+        posting_role=body.role,
+        posting_text=body.posting_text,
+        include_cover_letter=body.include_cover_letter,
+        db=db,
+    )
+    return {"detail": "Targeting complete"}

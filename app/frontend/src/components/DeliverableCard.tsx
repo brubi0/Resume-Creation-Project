@@ -12,21 +12,35 @@ interface Props {
 const TYPE_LABELS: Record<string, string> = {
   resume: "Resume (Word)",
   resume_md: "Resume (Markdown)",
+  resume_targeted_md: "Targeted Resume (Markdown)",
+  resume_targeted_docx: "Targeted Resume (Word)",
   interview_prep: "Interview Prep (Word)",
+  interview_prep_md: "Interview Prep (Markdown)",
   skills_matrix: "Skills Matrix",
+  skills_matrix_html: "Skills Matrix",
   score_card: "Score Card",
+  score_card_md: "Score Card",
+  cover_letter_md: "Cover Letter (Markdown)",
+  cover_letter_docx: "Cover Letter (Word)",
 };
 
 const TYPE_ICONS: Record<string, string> = {
   resume: "W",
   resume_md: "M",
+  resume_targeted_md: "M",
+  resume_targeted_docx: "W",
   interview_prep: "W",
+  interview_prep_md: "M",
   skills_matrix: "H",
+  skills_matrix_html: "H",
   score_card: "S",
+  score_card_md: "S",
+  cover_letter_md: "CL",
+  cover_letter_docx: "CL",
 };
 
 // Files that can be previewed in-browser
-const PREVIEWABLE = new Set(["resume_md", "skills_matrix", "score_card"]);
+const PREVIEWABLE = new Set(["resume_md", "skills_matrix", "score_card", "resume_targeted_md", "cover_letter_md", "skills_matrix_html", "score_card_md", "interview_prep_md"]);
 
 export default function DeliverableCard({
   id,
