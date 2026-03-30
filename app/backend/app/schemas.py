@@ -102,6 +102,16 @@ class DeliverableResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class DeliverableWithContext(BaseModel):
+    id: uuid.UUID
+    session_id: uuid.UUID
+    type: str
+    filename: str
+    created_at: datetime
+    candidate_name: str
+    target_role: str
+
+
 # --- Profiles ---
 
 

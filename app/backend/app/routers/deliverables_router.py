@@ -10,23 +10,32 @@ from app.auth import get_current_user, require_admin
 from app.database import get_db
 from app.deliverables import generate_all_deliverables
 from app.models import Deliverable, Session, User
-from app.schemas import DeliverableResponse
+from app.prompts import get_profile_metadata
+from app.schemas import DeliverableResponse, DeliverableWithContext
 
 router = APIRouter()
 
 
-@router.get("", response_model=list[DeliverableResponse])
+def _build_slug_to_role() -> dict[str, str]:
+    return {p["slug"]: p["name"] for p in get_profile_metadata()}
+
+
+@router.get("", response_model=list[DeliverableWithContext])
 async def list_deliverables(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    slug_to_role = _build_slug_to_role()
+
     if user.role == "admin":
-        # Admin can see all — optionally filter by session_id query param
         result = await db.execute(
-            select(Deliverable).order_by(Deliverable.created_at.desc())
+            select(Deliverable, Session, User)
+            .join(Session, Deliverable.session_id == Session.id)
+            .join(User, Session.user_id == User.id)
+            .order_by(Deliverable.created_at.desc())
         )
+        rows = result.all()
     else:
-        # Candidate sees deliverables from all their sessions
         session_result = await db.execute(
             select(Session.id).where(Session.user_id == user.id)
         )
@@ -34,11 +43,29 @@ async def list_deliverables(
         if not session_ids:
             return []
         result = await db.execute(
-            select(Deliverable)
+            select(Deliverable, Session, User)
+            .join(Session, Deliverable.session_id == Session.id)
+            .join(User, Session.user_id == User.id)
             .where(Deliverable.session_id.in_(session_ids))
             .order_by(Deliverable.created_at.desc())
         )
-    return result.scalars().all()
+        rows = result.all()
+
+    output = []
+    for deliverable, session, candidate in rows:
+        target_role = slug_to_role.get(session.profile_slug or "", "") or "General"
+        output.append(
+            DeliverableWithContext(
+                id=deliverable.id,
+                session_id=deliverable.session_id,
+                type=deliverable.type,
+                filename=deliverable.filename,
+                created_at=deliverable.created_at,
+                candidate_name=candidate.name,
+                target_role=target_role,
+            )
+        )
+    return output
 
 
 @router.get("/{deliverable_id}/download")
