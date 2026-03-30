@@ -138,6 +138,13 @@ def build_system_prompt(session: Session) -> str:
             profile = files.get(f"profile_{session.profile_slug}", "")
             if profile:
                 parts.append(f"\n## Selected Profile\n{profile}")
+        if session.resume_text:
+            parts.append(
+                f"\n## Candidate's Existing Resume\n"
+                "The candidate has uploaded their current resume. Use it to understand "
+                "their background, detect experience level, and identify what needs improvement.\n\n"
+                f"```\n{session.resume_text}\n```"
+            )
 
     elif session.phase == 2:
         # Discovery interview
@@ -164,6 +171,10 @@ def build_system_prompt(session: Session) -> str:
             profile = files.get(f"profile_{session.profile_slug}", "")
             if profile:
                 parts.append(f"\n## Industry Profile\n{profile}")
+        if session.resume_text:
+            parts.append(
+                f"\n## Candidate's Existing Resume\n```\n{session.resume_text}\n```"
+            )
         if session.discovery_data:
             parts.append(
                 f"\n## Discovery Data Collected So Far\n```json\n{json.dumps(session.discovery_data, indent=2)}\n```"
@@ -212,6 +223,10 @@ def build_system_prompt(session: Session) -> str:
             )
             if resume_section:
                 parts.append(f"\n## Output Format\n{resume_section}")
+        if session.resume_text:
+            parts.append(
+                f"\n## Candidate's Existing Resume\n```\n{session.resume_text}\n```"
+            )
         if session.discovery_data:
             parts.append(
                 f"\n## Complete Discovery Data\n```json\n{json.dumps(session.discovery_data, indent=2)}\n```"

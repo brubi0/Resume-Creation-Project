@@ -74,6 +74,7 @@ class SessionResponse(BaseModel):
     experience_level: str | None
     profile_slug: str | None
     job_description: str | None
+    resume_text: str | None
     status: str
     created_at: datetime
 
@@ -85,6 +86,7 @@ class ChatStatusResponse(BaseModel):
     experience_level: str | None
     profile_slug: str | None
     job_description: str | None
+    resume_text: str | None
     status: str
 
 

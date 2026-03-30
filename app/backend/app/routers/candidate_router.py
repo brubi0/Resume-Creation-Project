@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+import io
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -141,6 +143,54 @@ async def start_new_session(
     return session
 
 
+@router.post("/resume", response_model=SessionResponse)
+async def upload_resume(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_candidate),
+):
+    """Accept a resume file (PDF, DOCX, or TXT) and store extracted text on the session."""
+    content = await file.read()
+    filename = (file.filename or "").lower()
+
+    if filename.endswith(".pdf"):
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(content))
+            text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not parse PDF: {exc}")
+    elif filename.endswith(".docx"):
+        try:
+            import docx
+
+            doc = docx.Document(io.BytesIO(content))
+            text = "\n".join(p.text for p in doc.paragraphs)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not parse DOCX: {exc}")
+    elif filename.endswith(".txt") or file.content_type in ("text/plain", "application/octet-stream"):
+        try:
+            text = content.decode("utf-8", errors="replace")
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Could not decode file: {exc}")
+    else:
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported file type. Upload a PDF, DOCX, or TXT file.",
+        )
+
+    text = text.strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="No text could be extracted from the file.")
+
+    session = await get_or_create_session(user, db)
+    session.resume_text = text
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
 @router.get("/status", response_model=ChatStatusResponse)
 async def get_status(
     db: AsyncSession = Depends(get_db),
@@ -152,5 +202,6 @@ async def get_status(
         experience_level=session.experience_level,
         profile_slug=session.profile_slug,
         job_description=session.job_description,
+        resume_text=session.resume_text,
         status=session.status,
     )

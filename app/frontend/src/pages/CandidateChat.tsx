@@ -6,6 +6,7 @@ import PhaseIndicator from "../components/PhaseIndicator";
 import ChatMessage from "../components/ChatMessage";
 import ChatInput from "../components/ChatInput";
 import JobDescriptionModal from "../components/JobDescriptionModal";
+import ResumeUploadModal from "../components/ResumeUploadModal";
 
 interface Message {
   id: string;
@@ -32,6 +33,7 @@ export default function CandidateChat() {
   const [status, setStatus] = useState<SessionStatus | null>(null);
   const [sending, setSending] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const [showResumeModal, setShowResumeModal] = useState(false);
   const [showJdModal, setShowJdModal] = useState(false);
   const [showJdView, setShowJdView] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -57,13 +59,13 @@ export default function CandidateChat() {
         });
         setMessages(messagesRes.data);
 
-        // New active session with no messages — show JD modal before starting
+        // New active session with no messages — show resume upload modal first
         if (
           messagesRes.data.length === 0 &&
           sessionRes.data.status === "active" &&
           sessionRes.data.phase === 0
         ) {
-          setShowJdModal(true);
+          setShowResumeModal(true);
         }
       } catch {
         // Session error handled by interceptor
@@ -78,6 +80,11 @@ export default function CandidateChat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const handleResumeDone = () => {
+    setShowResumeModal(false);
+    setShowJdModal(true);
+  };
 
   const kickOffInterview = async () => {
     setSending(true);
@@ -181,6 +188,11 @@ export default function CandidateChat() {
 
   return (
     <div className="flex h-screen flex-col bg-gray-50">
+      {/* Resume Upload Modal — shown first for new sessions */}
+      {showResumeModal && (
+        <ResumeUploadModal onDone={handleResumeDone} />
+      )}
+
       {/* JD Modal — shown for new sessions or mid-interview add/edit */}
       {showJdModal && (
         <JobDescriptionModal
