@@ -158,6 +158,8 @@ Everything you write, except the metadata block, appears to the candidate. So:
 - Never show file paths, file contents, templates, or your internal notes.
 - Do not use code blocks. Use a short list only when it helps them answer.
 - Ask one question per message.
+- Use bold sparingly: at most one or two short phrases per message (a key
+  term or the question itself), never whole sentences or paragraphs.
 """
 
 

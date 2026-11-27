@@ -65,6 +65,7 @@ export default function AdminDashboard() {
   const nDone = candidates.filter(
     (c) => c.session_status === "deliverables_generated",
   ).length;
+  const nNotStarted = candidates.filter((c) => !c.session_status).length;
   const num = "font-sans font-semibold tabular-nums";
 
   return (
@@ -123,7 +124,13 @@ export default function AdminDashboard() {
           {candidates.length === 1 ? "candidate" : "candidates"}:{" "}
           <span className={`${num} text-ink`}>{nActive}</span> interviewing,{" "}
           <span className={`${num} text-ink`}>{nReady}</span> ready for documents,{" "}
-          <span className={`${num} text-ink`}>{nDone}</span> complete.
+          <span className={`${num} text-ink`}>{nDone}</span> complete
+          {nNotStarted > 0 && (
+            <>
+              , <span className={`${num} text-ink`}>{nNotStarted}</span> not started
+            </>
+          )}
+          .
         </p>
 
         {/* Candidate list */}
