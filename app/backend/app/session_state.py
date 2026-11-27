@@ -177,7 +177,9 @@ def _apply_discovery(existing: dict, update, rejected: list[str], level=None) ->
             if not isinstance(value, list) or not all(isinstance(x, str) and x in known for x in value):
                 rejected.append("skipped_questions")
                 continue
-            data[key] = list(dict.fromkeys(value))
+            # Skips accumulate: the prompt asks the model to send only the current id.
+            prior = data.get(key) if isinstance(data.get(key), list) else []
+            data[key] = list(dict.fromkeys([*prior, *value]))
         else:
             data[key] = value
     if _json_size(data) > MAX_TOTAL_BYTES:

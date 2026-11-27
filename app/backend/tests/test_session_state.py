@@ -199,3 +199,12 @@ def test_rejection_log_has_no_values(caplog):
         val(sess(), {"status": secret, "phase": secret, secret: 1})
     assert "rejected=" in caplog.text and "session=" in caplog.text
     assert secret not in caplog.text
+
+
+def test_skipped_questions_accumulate_across_turns():
+    # The prompt asks the model to send only the current id; earlier skips must stay.
+    s = sess(experience_level="experienced",
+             discovery_data={"skipped_questions": ["hidden_achievements"]})
+    accepted, rejected = val(s, {"discovery_update": {"skipped_questions": ["employment_gaps"]}})
+    assert not rejected
+    assert accepted["discovery_data"]["skipped_questions"] == ["hidden_achievements", "employment_gaps"]
