@@ -1,0 +1,44 @@
+# Isolated test stack. Always run as project `resumetest` (see backend/run-tests.sh).
+name: resumetest
+
+services:
+  testdb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: resume_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d resume_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    working_dir: /app
+    command: ["sh", "-c", "pytest -q $${PYTEST_ARGS}"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://test:test@testdb:5432/resume_test
+      ANTHROPIC_API_KEY: test-key
+      ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      JWT_SECRET: test-secret
+      ADMIN_PASSWORD: test-admin-pw
+      SYSTEM_DIR: /data/system
+      PROFILES_DIR: /data/profiles
+      TEMPLATES_DIR: /data/templates
+      DELIVERABLES_DIR: /tmp/deliverables
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTEST_ARGS: ${PYTEST_ARGS:-}
+    volumes:
+      - ./backend:/app:ro
+      - ../system:/data/system:ro
+      - ../profiles:/data/profiles:ro
+      - ../templates:/data/templates:ro
+    depends_on:
+      testdb:
+        condition: service_healthy
