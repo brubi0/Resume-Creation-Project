@@ -46,6 +46,8 @@ class CandidateListItem(BaseModel):
     completed_sets: int = 0
     generation_status: str = "idle"
     generation_error: str | None = None
+    generation_kind: str | None = None
+    generation_posting_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 

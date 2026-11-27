@@ -188,7 +188,7 @@ async def trigger_targeting(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if not await claim_generation(db, session.id):
+    if not await claim_generation(db, session.id, "targeted"):
         raise HTTPException(status_code=409, detail=ALREADY_RUNNING)
 
     try:
@@ -197,10 +197,15 @@ async def trigger_targeting(
             company=body.company,
             role=body.role,
             posting_text=body.posting_text,
+            include_cover_letter=body.include_cover_letter,
         )
         db.add(posting)
-        await db.commit()
+        await db.flush()
         posting_id = posting.id
+        await db.execute(
+            update(Session).where(Session.id == session.id).values(generation_posting_id=posting_id)
+        )
+        await db.commit()
     except Exception:
         await db.rollback()
         await db.execute(
@@ -209,4 +214,20 @@ async def trigger_targeting(
         await db.commit()
         raise
     start_targeted_generation(session.id, posting_id, body.include_cover_letter)
+    return {"detail": "Targeting started", "generation_status": "running"}
+
+
+@router.post("/target/{posting_id}/retry", status_code=202)
+async def retry_targeting(
+    posting_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Re-run a targeted generation for an existing posting (reuses its staged text)."""
+    posting = (await db.execute(select(Posting).where(Posting.id == posting_id))).scalar_one_or_none()
+    if posting is None:
+        raise HTTPException(status_code=404, detail="Job posting not found")
+    if not await claim_generation(db, posting.session_id, "targeted", posting.id):
+        raise HTTPException(status_code=409, detail=ALREADY_RUNNING)
+    start_targeted_generation(posting.session_id, posting.id, posting.include_cover_letter)
     return {"detail": "Targeting started", "generation_status": "running"}

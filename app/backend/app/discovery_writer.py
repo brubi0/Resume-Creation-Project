@@ -113,6 +113,23 @@ def write_discovery_md(session: Session) -> None:
         f.write("\n".join(lines))
 
 
+async def write_discovery_md_if_session_exists(session: Session) -> bool:
+    """Write discovery.md only while the session row still exists (never recreates the
+    directory of a session deleted mid-request). Returns whether it wrote."""
+    import asyncio
+
+    from sqlalchemy import select
+
+    from app.database import async_session
+
+    async with async_session() as db:
+        found = (await db.execute(select(Session.id).where(Session.id == session.id))).first()
+    if found is None:
+        return False
+    await asyncio.to_thread(write_discovery_md, session)
+    return True
+
+
 def read_discovery_md(session: Session) -> str | None:
     """Return the discovery.md content, or None if it doesn't exist."""
     path = discovery_md_path(session)

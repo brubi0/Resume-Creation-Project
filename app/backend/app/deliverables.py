@@ -31,7 +31,7 @@ from app.claude_client import (
 )
 from app.config import settings
 from app.database import async_session
-from app.discovery_writer import write_discovery_md
+from app.discovery_writer import write_discovery_md_if_session_exists
 from app.interview import QUESTION_LABELS, progress
 from app.models import BASE_TYPES, Deliverable, Message, Posting, Session
 from app.prompts import _load_system_files, wrap_candidate_document
@@ -59,17 +59,22 @@ class DocumentError(Exception):
 # --------------------------------------------------------------- claim / tasks
 
 
-async def claim_generation(db, session_id: uuid.UUID) -> bool:
-    """Atomically mark the session as running. False if a live run holds it."""
+async def claim_generation(
+    db, session_id: uuid.UUID, kind: str = "base", posting_id: uuid.UUID | None = None
+) -> bool:
+    """Atomically mark the session as running. False if a live run holds it.
+
+    Records what is running (kind, posting) so a later "Try again" repeats the same run.
+    """
     result = await db.execute(
         text(
             "UPDATE sessions SET generation_status='running', generation_error=NULL, "
-            "generation_started_at=now() WHERE id=:id AND (generation_status <> 'running' "
+            "generation_started_at=now(), generation_kind=:kind, generation_posting_id=:pid WHERE id=:id AND (generation_status <> 'running' "
             "OR generation_started_at IS NULL "
             f"OR generation_started_at < now() - interval '{STALE_CLAIM_MINUTES} minutes') "
             "RETURNING id"
         ),
-        {"id": session_id},
+        {"id": session_id, "kind": kind, "pid": posting_id},
     )
     row = result.first()
     await db.commit()
@@ -103,6 +108,7 @@ async def wait_for_generation_tasks(timeout: float = 120) -> None:
 async def _guarded(session_id: uuid.UUID, work) -> None:
     try:
         await work
+        await _drop_dir_if_session_gone(session_id)
         return
     except DocumentError as e:
         msg = str(e)
@@ -118,6 +124,7 @@ async def _guarded(session_id: uuid.UUID, work) -> None:
         # type only: tracebacks/messages can quote candidate text
         log.error("generation failed session=%s: %s", session_id, type(exc).__name__)
         msg = "Document generation failed unexpectedly. Try again."
+    await _drop_dir_if_session_gone(session_id)
     try:
         async with async_session() as db:
             await db.execute(
@@ -228,6 +235,8 @@ def _require_files(items) -> None:
 
 async def _commit_set(session_id, items, *, kind, posting_id, replace_base, mark_generated):
     """Move staged files into place, then swap DB rows in one transaction."""
+    if not await _session_exists(session_id):
+        raise DocumentError("Session not found.")
     sdir = session_dir(session_id)
     sdir.mkdir(parents=True, exist_ok=True)
     placed: list[Path] = []
@@ -291,6 +300,20 @@ def _clear_staging(stage: Path) -> None:
         pass
 
 
+async def _session_exists(session_id) -> bool:
+    async with async_session() as db:
+        return (await db.execute(select(Session.id).where(Session.id == session_id))).first() is not None
+
+
+async def _drop_dir_if_session_gone(session_id) -> None:
+    """A session deleted mid-run must not leave a recreated directory behind."""
+    try:
+        if not await _session_exists(session_id):
+            shutil.rmtree(session_dir(session_id), ignore_errors=True)
+    except Exception as exc:
+        log.error("orphan cleanup failed session=%s: %s", session_id, type(exc).__name__)
+
+
 async def _load_session(session_id) -> Session:
     async with async_session() as db:
         session = (await db.execute(select(Session).where(Session.id == session_id))).scalar_one_or_none()
@@ -311,7 +334,7 @@ async def _generate_base(session_id: uuid.UUID) -> None:
     session = await _load_session(session_id)
     files = _load_system_files()
 
-    await asyncio.to_thread(write_discovery_md, session)  # admin-readable copy only
+    await write_discovery_md_if_session_exists(session)  # admin-readable copy only
     messages = await _user_messages(session_id)
     snapshot = _snapshot_for(session, messages)
     check = _document_check(session)
@@ -596,7 +619,7 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
         raise DocumentError("Job posting not found.")
 
     files = _load_system_files()
-    await asyncio.to_thread(write_discovery_md, session)
+    await write_discovery_md_if_session_exists(session)
     snapshot = _snapshot_for(session, await _user_messages(session_id))
     check = _document_check(session)
     rules = files.get(

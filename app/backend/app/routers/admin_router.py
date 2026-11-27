@@ -77,6 +77,8 @@ async def list_candidates(
                 completed_sets=completed_sets,
                 generation_status=gen.generation_status if gen else "idle",
                 generation_error=gen.generation_error if gen else None,
+                generation_kind=gen.generation_kind if gen else None,
+                generation_posting_id=gen.generation_posting_id if gen else None,
             )
         )
     return items

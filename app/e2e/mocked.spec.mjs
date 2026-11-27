@@ -207,7 +207,8 @@ const adminCandidates = (phase) => [
     generation_status: phase === "poll" ? "running" : "running", generation_error: null },
   { id: uuid(22), name: "Tessa Okonkwo-Bell", username: "tessa", created_at: NOW, session_id: uuid(32),
     session_status: "interview_complete", session_phase: 3, completed_sets: 0,
-    generation_status: "failed", generation_error: "The AI service was unavailable. Try again in a few minutes." },
+    generation_status: "failed", generation_error: "The AI service was unavailable. Try again in a few minutes.",
+    generation_kind: "targeted", generation_posting_id: uuid(41) },
   { id: uuid(23), name: "Rosa Delgado", username: "rosa", created_at: NOW, session_id: uuid(33),
     session_status: "interview_complete", session_phase: 3, completed_sets: 0, generation_status: "idle", generation_error: null },
   { id: uuid(24), name: "Hector Vance", username: "hector", created_at: NOW, session_id: uuid(34),
@@ -216,7 +217,8 @@ const adminCandidates = (phase) => [
 
 async function adminStates(browser, vp) {
   let loads = 0;
-  const { ctx, page } = await open(browser, vp, ADMIN, "/admin", {
+  const { ctx, page, calls } = await open(browser, vp, ADMIN, "/admin", {
+    "POST /deliverables/target/*": (_r, route) => json(route, 202, { generation_status: "running" }),
     "GET /admin/candidates": (_r, route) => {
       loads += 1;
       const list = adminCandidates();
@@ -232,6 +234,11 @@ async function adminStates(browser, vp) {
   check(`[${vp.name}] admin shows the failed state with its message and Try again`,
     (await page.locator("p[role=alert]:visible", { hasText: "The AI service was unavailable" }).count()) === 1 &&
     (await page.locator("button:visible", { hasText: "Try again" }).count()) === 1);
+  await page.locator("button:visible", { hasText: "Try again" }).click();
+  await page.waitForTimeout(500);
+  check(`[${vp.name}] a failed tailoring run retries the targeted posting, not base generation`,
+    calls.some((c) => c.key === `POST /deliverables/target/${uuid(41)}/retry`) &&
+    !calls.some((c) => c.key === "POST /deliverables/generate"));
   check(`[${vp.name}] admin shows Generate documents and Tailor to a job`,
     (await page.locator("button:visible", { hasText: "Generate documents" }).count()) === 1 &&
     (await page.locator("button:visible", { hasText: "Tailor to a job" }).count()) >= 1);

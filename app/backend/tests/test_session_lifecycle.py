@@ -404,3 +404,52 @@ async def test_fresh_pending_turn_is_not_resolved_on_read(client):
         await db.commit()
     assert [m["status"] for m in await _messages(client, c)] == ["pending"]
     assert (await _get_session(client, c))["turn_state"] == "pending"
+
+
+async def test_session_deleted_mid_turn_is_409_not_500_and_leaves_no_directory(
+    client, admin_headers, fake_claude, deliverables_dir
+):
+    import os
+
+    from app.storage import session_dir
+
+    c = await make_candidate(client, "Gus Nurse")
+    sid = (await _get_session(client, c))["id"]
+    task, gate = await _gated_send(client, fake_claude, c, "an answer", sid=sid, cmid=str(uuid.uuid4()))
+    r = await client.delete(f"/api/admin/candidates/{c['id']}", headers=admin_headers)
+    assert r.status_code == 200
+    gate.set()
+    reply = await asyncio.wait_for(task, 15)
+    assert reply.status_code == 409 and reply.json()["code"] == "session_replaced"
+    assert not os.path.exists(session_dir(uuid.UUID(sid)))
+
+
+async def test_failed_model_call_after_session_deleted_does_not_crash(client, admin_headers, fake_claude):
+    from app.claude_client import ClaudeUnavailable
+
+    c = await make_candidate(client, "Hope Teacher")
+    sid = (await _get_session(client, c))["id"]
+    gate = threading.Event()
+    fake_claude.started.clear()
+
+    def boom(_kw):
+        raise ClaudeUnavailable("down")
+
+    fake_claude.script(("wait", gate, boom))
+    task = asyncio.create_task(_send(client, c, "x", sid=sid, cmid=str(uuid.uuid4())))
+    assert await asyncio.to_thread(fake_claude.started.wait, 10)
+    await client.delete(f"/api/admin/candidates/{c['id']}", headers=admin_headers)
+    gate.set()
+    reply = await asyncio.wait_for(task, 15)
+    assert reply.status_code == 503
+
+
+async def test_discovery_md_not_written_for_deleted_session(client, deliverables_dir):
+    import os
+
+    from app.discovery_writer import write_discovery_md_if_session_exists
+    from app.storage import session_dir
+
+    ghost = Session(id=uuid.uuid4(), user_id=uuid.uuid4(), phase=2, discovery_data={"a": "b"})
+    assert await write_discovery_md_if_session_exists(ghost) is False
+    assert not os.path.exists(session_dir(ghost.id))

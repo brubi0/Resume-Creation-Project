@@ -19,7 +19,7 @@ from app.claude_client import (
 )
 from app.claude_service import EmptyReply, chat_with_claude
 from app.database import get_db
-from app.discovery_writer import write_discovery_md
+from app.discovery_writer import write_discovery_md_if_session_exists
 from app.models import Message, Session, User
 from app.prompts import build_system_prompt, get_available_profiles, get_profile_metadata
 from app.session_state import extract_resume, validate_updates
@@ -107,6 +107,9 @@ async def _resolve_stale_turn(db: AsyncSession, session: Session) -> Session:
     ):
         return session
     locked = await _lock_session_row(db, session.id)
+    if locked is None:
+        await db.rollback()
+        return session
     started = locked.turn_started_at
     if (
         locked.turn_state == "pending"
@@ -156,14 +159,15 @@ async def get_messages(
     return result.scalars().all()
 
 
-async def _lock_session_row(db: AsyncSession, session_id) -> Session:
+async def _lock_session_row(db: AsyncSession, session_id) -> Session | None:
+    """Lock the row; None if the session (or its user) was deleted meanwhile."""
     result = await db.execute(
         select(Session)
         .where(Session.id == session_id)
         .with_for_update()
         .execution_options(populate_existing=True)
     )
-    return result.scalar_one()
+    return result.scalar_one_or_none()
 
 
 def _owns_turn(session: Session, msg: Message | None, claimed_at: datetime) -> bool:
@@ -187,6 +191,9 @@ async def _end_turn(
 ) -> None:
     """Tx C / failed-B: mark the user's message and release the turn. Keeps the answer."""
     session = await _lock_session_row(db, session_id)
+    if session is None:
+        await db.rollback()
+        return
     msg = await db.get(Message, user_msg_id, populate_existing=True)
     if _owns_turn(session, msg, claimed_at):
         msg.status = status
@@ -328,6 +335,9 @@ async def send_message(
 
     # ---- Tx B: re-lock, validate against the fresh row, apply -------------
     session = await _lock_session_row(db, sid)
+    if session is None:  # deleted while the model call ran
+        await db.rollback()
+        return _json(409, "session_replaced", "This interview was replaced. Reload to continue.")
     current = await _latest_session(user, db)
     if session.status == "abandoned" or current is None or current.id != sid:
         await _end_turn(db, sid, user_msg_id, now, status="failed")
@@ -370,7 +380,7 @@ async def send_message(
     # Write discovery.md to disk whenever discovery data or phase changed
     if "discovery_data" in accepted or "phase" in accepted:
         try:
-            write_discovery_md(session)
+            await write_discovery_md_if_session_exists(session)
         except Exception:
             pass  # non-fatal — DB is the source of truth
 

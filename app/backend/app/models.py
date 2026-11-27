@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -72,6 +72,12 @@ class Session(Base):
     generation_started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    generation_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    generation_posting_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("postings.id", ondelete="SET NULL", use_alter=True,
+                   name="fk_sessions_generation_posting_id"),
+        nullable=True,
+    )
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
@@ -99,7 +105,8 @@ class Session(Base):
         back_populates="session", cascade="all, delete-orphan"
     )
     postings: Mapped[list["Posting"]] = relationship(
-        back_populates="session", cascade="all, delete-orphan"
+        back_populates="session", cascade="all, delete-orphan",
+        foreign_keys="Posting.session_id",
     )
 
 
@@ -150,11 +157,16 @@ class Posting(Base):
     company: Mapped[str] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(nullable=False)
     posting_text: Mapped[str] = mapped_column(Text, nullable=False)
+    include_cover_letter: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.utcnow()
     )
 
-    session: Mapped["Session"] = relationship(back_populates="postings")
+    session: Mapped["Session"] = relationship(
+        back_populates="postings", foreign_keys=[session_id]
+    )
 
 
 class Deliverable(Base):

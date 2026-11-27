@@ -25,6 +25,16 @@ def upgrade() -> None:
         "sessions",
         sa.Column("generation_started_at", sa.DateTime(timezone=True), nullable=True),
     )
+    op.add_column("sessions", sa.Column("generation_kind", sa.String(20), nullable=True))
+    op.add_column("sessions", sa.Column("generation_posting_id", UUID(as_uuid=True), nullable=True))
+    op.create_foreign_key(
+        "fk_sessions_generation_posting_id", "sessions", "postings",
+        ["generation_posting_id"], ["id"], ondelete="SET NULL",
+    )
+    op.add_column(
+        "postings",
+        sa.Column("include_cover_letter", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+    )
     op.add_column(
         "deliverables",
         sa.Column("kind", sa.String(20), nullable=False, server_default="base"),
@@ -43,6 +53,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_column("postings", "include_cover_letter")
+    op.drop_constraint("fk_sessions_generation_posting_id", "sessions", type_="foreignkey")
+    op.drop_column("sessions", "generation_posting_id")
+    op.drop_column("sessions", "generation_kind")
     op.drop_constraint("fk_deliverables_posting_id", "deliverables", type_="foreignkey")
     op.drop_column("deliverables", "posting_id")
     op.drop_column("deliverables", "kind")

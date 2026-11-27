@@ -413,6 +413,70 @@ async def test_targeted_failure_leaves_nothing_and_second_call_409s_while_runnin
         assert len((await db.execute(select(Posting).where(Posting.session_id == sid))).scalars().all()) == 1
 
 
+async def test_targeted_retry_reuses_staged_text_and_posting(client, admin_headers, fake_claude):
+    from app.claude_client import ClaudeUnavailable
+
+    c, sid = await _session(client, "Tess Marketing")
+    fake_claude.script("# T resume STAGED", ClaudeUnavailable("down"))
+    r = await client.post("/api/deliverables/target", headers=admin_headers, json={
+        "session_id": str(sid), "company": "Acme", "role": "Brand Lead",
+        "posting_text": "Brand Lead at Acme", "include_cover_letter": True})
+    assert r.status_code == 202
+    await wait_for_generation_tasks()
+    s = await _sess(sid)
+    assert s.generation_status == "failed" and s.generation_kind == "targeted"
+    pid = s.generation_posting_id
+    assert pid is not None and await _rows(sid) == []
+    listed = [x for x in (await client.get("/api/admin/candidates", headers=admin_headers)).json()
+              if x["session_id"] == str(sid)][0]
+    assert listed["generation_kind"] == "targeted" and listed["generation_posting_id"] == str(pid)
+    assert len(fake_claude.calls) == 2
+
+    fake_claude.script("# cover letter")
+    r = await client.post(f"/api/deliverables/target/{pid}/retry", headers=admin_headers)
+    assert r.status_code == 202, r.text
+    await wait_for_generation_tasks()
+    assert len(fake_claude.calls) == 3  # only the cover letter was generated again
+    assert (await _sess(sid)).generation_status == "done"
+    types = sorted(x.type for x in await _rows(sid, "targeted"))
+    assert types == ["cover_letter_docx", "cover_letter_md", "resume_targeted_docx", "resume_targeted_md"]
+    async with async_session() as db:
+        assert len((await db.execute(select(Posting).where(Posting.session_id == sid))).scalars().all()) == 1
+    r = await client.post(f"/api/deliverables/target/{uuid.uuid4()}/retry", headers=admin_headers)
+    assert r.status_code == 404
+
+
+async def test_base_generation_records_kind_base(client, admin_headers, fake_claude):
+    c, sid = await _session(client, "Bo Base")
+    _script_base(fake_claude, "Bo Base")
+    await _generate(client, admin_headers, sid)
+    s = await _sess(sid)
+    assert s.generation_kind == "base" and s.generation_posting_id is None
+
+
+async def test_commit_for_deleted_session_fails_quietly_without_recreating_directory(
+    client, deliverables_dir, tmp_path
+):
+    from app.deliverables import DocumentError, _commit_set, _guarded
+    from app.storage import session_dir
+
+    ghost = uuid.uuid4()
+    staged = tmp_path / "resume.md"
+    staged.write_text("# x")
+    items = [dict(type="resume_md", ext=".md", staged=staged, filename="x.md")]
+    with pytest.raises(DocumentError):
+        await _commit_set(ghost, items, kind="base", posting_id=None,
+                          replace_base=True, mark_generated=True)
+    assert not os.path.exists(session_dir(ghost))
+
+    async def work():  # a run that recreated the directory, then the session is found gone
+        os.makedirs(session_dir(ghost), exist_ok=True)
+        raise DocumentError("boom")
+
+    await _guarded(ghost, work())  # no exception
+    assert not os.path.exists(session_dir(ghost))
+
+
 # --------------------------------------------------------- profile slugs
 
 

@@ -11,6 +11,8 @@ interface Candidate {
   completed_sets: number;
   generation_status: "idle" | "running" | "failed" | "done";
   generation_error: string | null;
+  generation_kind?: "base" | "targeted" | null;
+  generation_posting_id?: string | null;
 }
 
 const PHASE_NAMES = [
@@ -27,6 +29,7 @@ interface Props {
   candidates: Candidate[];
   onDelete: (id: string) => void;
   onGenerateDeliverables: (id: string) => void;
+  onRetryTargeted: (postingId: string) => void;
   onTarget: (candidate: Candidate) => void;
 }
 
@@ -46,6 +49,7 @@ export default function CandidateList({
   candidates,
   onDelete,
   onGenerateDeliverables,
+  onRetryTargeted,
   onTarget,
 }: Props) {
   const navigate = useNavigate();
@@ -76,7 +80,11 @@ export default function CandidateList({
         (c.session_status === "interview_complete" ||
           c.session_status === "deliverables_generated") && (
           <button
-            onClick={() => onGenerateDeliverables(c.session_id!)}
+            onClick={() =>
+              c.generation_kind === "targeted" && c.generation_posting_id
+                ? onRetryTargeted(c.generation_posting_id)
+                : onGenerateDeliverables(c.session_id!)
+            }
             className={`rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white hover:bg-ink/90 ${FOCUS}`}
           >
             Try again

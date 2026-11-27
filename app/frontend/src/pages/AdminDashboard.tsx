@@ -18,6 +18,8 @@ interface Candidate {
   completed_sets: number;
   generation_status: "idle" | "running" | "failed" | "done";
   generation_error: string | null;
+  generation_kind?: "base" | "targeted" | null;
+  generation_posting_id?: string | null;
 }
 
 export default function AdminDashboard() {
@@ -61,6 +63,19 @@ export default function AdminDashboard() {
   const handleGenerate = async (sessionId: string) => {
     try {
       await api.post(`/deliverables/generate?session_id=${sessionId}`);
+      loadCandidates();
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        loadCandidates();
+        return;
+      }
+      alert("Failed to trigger generation");
+    }
+  };
+
+  const handleRetryTargeted = async (postingId: string) => {
+    try {
+      await api.post(`/deliverables/target/${postingId}/retry`);
       loadCandidates();
     } catch (err: any) {
       if (err?.response?.status === 409) {
@@ -157,6 +172,7 @@ export default function AdminDashboard() {
               candidates={candidates}
               onDelete={handleDelete}
               onGenerateDeliverables={handleGenerate}
+              onRetryTargeted={handleRetryTargeted}
               onTarget={setTargetingCandidate}
             />
           )}
