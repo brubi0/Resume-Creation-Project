@@ -350,7 +350,7 @@ async def test_startup_warns_about_defaults_without_leaking_values(caplog, monke
     class _Sess:
         async def __aenter__(self): return self
         async def __aexit__(self, *a): return False
-        async def execute(self, *a): 
+        async def execute(self, *a):
             class R:
                 def scalar_one_or_none(self): return object()
             return R()
