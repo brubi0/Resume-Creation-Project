@@ -9,6 +9,8 @@ interface Candidate {
   session_status: string | null;
   session_phase: number | null;
   completed_sets: number;
+  generation_status: "idle" | "running" | "failed" | "done";
+  generation_error: string | null;
 }
 
 const PHASE_NAMES = [
@@ -69,7 +71,20 @@ export default function CandidateList({
 
   const actions = (c: Candidate) => (
     <>
-      {c.session_status === "interview_complete" && c.session_id && (
+      {c.generation_status === "failed" &&
+        c.session_id &&
+        (c.session_status === "interview_complete" ||
+          c.session_status === "deliverables_generated") && (
+          <button
+            onClick={() => onGenerateDeliverables(c.session_id!)}
+            className={`rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white hover:bg-ink/90 ${FOCUS}`}
+          >
+            Try again
+          </button>
+        )}
+      {c.generation_status !== "running" &&
+        c.generation_status !== "failed" &&
+        c.session_status === "interview_complete" && c.session_id && (
         <button
           onClick={() => onGenerateDeliverables(c.session_id!)}
           className={`rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-white hover:bg-ink/90 ${FOCUS}`}
@@ -85,7 +100,9 @@ export default function CandidateList({
           Documents
         </button>
       )}
-      {c.session_status === "deliverables_generated" && c.session_id && (
+      {c.session_status === "deliverables_generated" &&
+        c.session_id &&
+        c.generation_status !== "running" && (
         <button
           onClick={() => onTarget(c)}
           className={`rounded-lg border border-rule px-3 py-1.5 text-sm font-medium text-ink hover:border-ink ${FOCUS}`}
@@ -113,6 +130,7 @@ export default function CandidateList({
             <p className="break-all text-sm text-slate">{c.username}</p>
             <div className="mt-2 text-[15px]">
               <StatusLabel status={c.session_status} />
+              <GenerationNote c={c} />
               {c.completed_sets > 1 && (
                 <p className="mt-0.5 text-xs text-slate">
                   {c.completed_sets} resume sets
@@ -150,6 +168,7 @@ export default function CandidateList({
                 <td className="px-4 py-3">{phaseOf(c)}</td>
                 <td className="px-4 py-3">
                   <StatusLabel status={c.session_status} />
+                  <GenerationNote c={c} />
                   {c.completed_sets > 1 && (
                     <p className="mt-0.5 text-xs text-slate">
                       {c.completed_sets} resume sets
@@ -191,4 +210,27 @@ function StatusLabel({ status }: { status: string | null }) {
       {s.label}
     </span>
   );
+}
+
+function GenerationNote({ c }: { c: Candidate }) {
+  if (c.generation_status === "running")
+    return (
+      <p
+        role="status"
+        className="mt-1 inline-flex items-center gap-2 text-sm text-slate"
+      >
+        <span
+          className="h-2 w-2 animate-pulse rounded-full bg-hl ring-2 ring-ink/20"
+          aria-hidden="true"
+        />
+        Generating documents…
+      </p>
+    );
+  if (c.generation_status === "failed")
+    return (
+      <p role="alert" className="mt-1 max-w-xs text-sm text-danger">
+        {c.generation_error || "Document generation failed. Try again."}
+      </p>
+    );
+  return null;
 }

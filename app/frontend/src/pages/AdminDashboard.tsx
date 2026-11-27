@@ -16,6 +16,8 @@ interface Candidate {
   session_status: string | null;
   session_phase: number | null;
   completed_sets: number;
+  generation_status: "idle" | "running" | "failed" | "done";
+  generation_error: string | null;
 }
 
 export default function AdminDashboard() {
@@ -43,6 +45,13 @@ export default function AdminDashboard() {
     loadCandidates();
   }, [loadCandidates]);
 
+  const anyRunning = candidates.some((c) => c.generation_status === "running");
+  useEffect(() => {
+    if (!anyRunning) return;
+    const t = setInterval(loadCandidates, 5000);
+    return () => clearInterval(t);
+  }, [anyRunning, loadCandidates]);
+
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this candidate and all their data?")) return;
     await api.delete(`/admin/candidates/${id}`);
@@ -53,7 +62,11 @@ export default function AdminDashboard() {
     try {
       await api.post(`/deliverables/generate?session_id=${sessionId}`);
       loadCandidates();
-    } catch {
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        loadCandidates();
+        return;
+      }
       alert("Failed to trigger generation");
     }
   };
@@ -178,7 +191,7 @@ export default function AdminDashboard() {
           candidateName={targetingCandidate.name}
           onDone={() => {
             setTargetingCandidate(null);
-            setProfileBanner(`Tailored resume generated for ${targetingCandidate.name}.`);
+            setProfileBanner(`Tailored resume started for ${targetingCandidate.name}. It will appear under Documents shortly.`);
           }}
           onClose={() => setTargetingCandidate(null)}
         />

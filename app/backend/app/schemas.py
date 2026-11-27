@@ -44,6 +44,8 @@ class CandidateListItem(BaseModel):
     session_status: str | None = None
     session_phase: int | None = None
     completed_sets: int = 0
+    generation_status: str = "idle"
+    generation_error: str | None = None
 
     model_config = {"from_attributes": True}
 

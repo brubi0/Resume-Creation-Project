@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 
 from app.config import settings
 from app.database import async_session
-from app.deliverables import generate_all_deliverables
+from app.deliverables import wait_for_generation_tasks
 from app.models import Deliverable, Session
 
 from .conftest import make_admin_headers, make_candidate
@@ -95,7 +95,6 @@ async def test_candidate_cannot_call_admin_routes(client):
 # ------------------------------------------------- known bugs (xfail)
 
 
-@pytest.mark.xfail(strict=True, reason="candidate_name is used raw in file paths: traversal writes outside the session dir")
 async def test_filename_traversal_stays_in_session_dir(client, admin_headers, fake_claude, deliverables_dir):
     c = await make_candidate(client, "Eve Nonprofit")
     marker = f"escape_{uuid.uuid4().hex[:8]}"
@@ -107,31 +106,31 @@ async def test_filename_traversal_stays_in_session_dir(client, admin_headers, fa
     fake_claude.script("# R", "# P", "<html></html>", "# S")
     escaped = os.path.join(os.path.dirname(deliverables_dir), f"{marker}*")
     try:
-        await client.post(f"/api/deliverables/generate?session_id={sid}", headers=admin_headers)
+        r = await client.post(f"/api/deliverables/generate?session_id={sid}", headers=admin_headers)
+        assert r.status_code == 202
+        await wait_for_generation_tasks()
         assert glob.glob(escaped) == [], "files were written outside the session dir"
     finally:
         for p in glob.glob(escaped):
             os.remove(p)
 
 
-@pytest.mark.xfail(strict=True, reason="_pandoc_convert swallows errors and the DOCX row is registered anyway")
-async def test_pandoc_failure_does_not_register_docx(client, fake_claude, monkeypatch, tmp_path):
+async def test_pandoc_failure_does_not_register_docx(client, admin_headers, fake_claude, monkeypatch, tmp_path):
     c = await make_candidate(client, "Frank Software")
     sid = await _make_session(c["id"], discovery_data={"candidate_name": "Frank Software"},
                               phase=3, status="interview_complete")
     fake_claude.script("# R", "# P", "<html></html>", "# S")
     monkeypatch.setenv("PATH", str(tmp_path))  # empty dir: pandoc is missing
-    async with async_session() as db:
-        s = (await db.execute(select(Session).where(Session.id == sid))).scalar_one()
-        try:
-            await generate_all_deliverables(s, db)
-        except Exception:
-            pass
+    r = await client.post(f"/api/deliverables/generate?session_id={sid}", headers=admin_headers)
+    assert r.status_code == 202
+    await wait_for_generation_tasks()
     async with async_session() as db:
         rows = (await db.execute(
-            select(Deliverable).where(Deliverable.session_id == sid, Deliverable.type == "resume_docx")
+            select(Deliverable).where(Deliverable.session_id == sid)
         )).scalars().all()
+        s = (await db.execute(select(Session).where(Session.id == sid))).scalar_one()
     assert rows == []
+    assert s.generation_status == "failed"
 
 
 @pytest.mark.xfail(strict=True, reason="META from the model is applied unvalidated (phase 99, status deliverables_generated)")

@@ -1,19 +1,34 @@
-import os
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, require_admin
 from app.database import get_db
-from app.deliverables import generate_all_deliverables, generate_targeted_deliverables
+from app.config import settings
+from app.deliverables import claim_generation, start_base_generation, start_targeted_generation
 from app.models import Deliverable, Posting, Session, User
 from app.prompts import get_profile_metadata
 from app.schemas import DeliverableResponse, DeliverableWithContext, TargetRequest
+from app.storage import content_disposition, resolve_inside
 
 router = APIRouter()
+
+ALREADY_RUNNING = "Documents are already being generated for this candidate."
+
+
+def _served_path(deliverable: Deliverable) -> Path:
+    """The file behind a row, only if it exists inside DELIVERABLES_DIR. Never leaks the path."""
+    try:
+        path = resolve_inside(settings.DELIVERABLES_DIR, deliverable.file_path)
+    except (ValueError, OSError):
+        raise HTTPException(status_code=404, detail="File not found")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    return path
 
 
 def _build_slug_to_role() -> dict[str, str]:
@@ -91,13 +106,11 @@ async def download_deliverable(
         if not session_result.scalar_one_or_none():
             raise HTTPException(status_code=403, detail="Access denied")
 
-    if not os.path.exists(deliverable.file_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
-
+    path = _served_path(deliverable)
     return FileResponse(
-        deliverable.file_path,
-        filename=deliverable.filename,
+        path,
         media_type="application/octet-stream",
+        headers={"Content-Disposition": content_disposition(deliverable.filename)},
     )
 
 
@@ -124,15 +137,14 @@ async def preview_deliverable(
         if not session_result.scalar_one_or_none():
             raise HTTPException(status_code=403, detail="Access denied")
 
-    if not os.path.exists(deliverable.file_path):
-        raise HTTPException(status_code=404, detail="File not found on disk")
+    path = _served_path(deliverable)
 
     # Only allow preview for text-based files
-    ext = os.path.splitext(deliverable.file_path)[1].lower()
+    ext = path.suffix.lower()
     if ext not in (".md", ".html", ".txt"):
         raise HTTPException(status_code=400, detail="File type not previewable")
 
-    with open(deliverable.file_path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         content = f.read()
 
     content_type = "text/html" if ext == ".html" else "text/markdown"
@@ -150,8 +162,10 @@ async def trigger_generation(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    await generate_all_deliverables(session, db)
-    return {"detail": "Deliverable generation started"}
+    if not await claim_generation(db, session.id):
+        raise HTTPException(status_code=409, detail=ALREADY_RUNNING)
+    start_base_generation(session.id)
+    return {"detail": "Document generation started", "generation_status": "running"}
 
 
 @router.post("/target", status_code=202)
@@ -165,22 +179,25 @@ async def trigger_targeting(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Save posting for reference
-    posting = Posting(
-        session_id=session.id,
-        company=body.company,
-        role=body.role,
-        posting_text=body.posting_text,
-    )
-    db.add(posting)
-    await db.flush()
+    if not await claim_generation(db, session.id):
+        raise HTTPException(status_code=409, detail=ALREADY_RUNNING)
 
-    await generate_targeted_deliverables(
-        session=session,
-        posting_company=body.company,
-        posting_role=body.role,
-        posting_text=body.posting_text,
-        include_cover_letter=body.include_cover_letter,
-        db=db,
-    )
-    return {"detail": "Targeting complete"}
+    try:
+        posting = Posting(
+            session_id=session.id,
+            company=body.company,
+            role=body.role,
+            posting_text=body.posting_text,
+        )
+        db.add(posting)
+        await db.commit()
+        posting_id = posting.id
+    except Exception:
+        await db.rollback()
+        await db.execute(
+            update(Session).where(Session.id == session.id).values(generation_status="idle")
+        )
+        await db.commit()
+        raise
+    start_targeted_generation(session.id, posting_id, body.include_cover_letter)
+    return {"detail": "Targeting started", "generation_status": "running"}

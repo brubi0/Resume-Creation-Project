@@ -13,6 +13,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import Session, User
 from app.prompts import get_profile_metadata, reload_system_files
+from app.storage import resolve_inside
 from app.schemas import CandidateCreate, CandidateListItem, ProfileGenerateRequest, ProfileItem
 
 _claude = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -56,6 +57,7 @@ async def list_candidates(
                 c.sessions,
                 key=lambda s: (STATUS_PRIORITY.get(s.status, 99), -s.created_at.timestamp()),
             )
+        gen = next((s for s in c.sessions if s.generation_status == "running"), best)
         items.append(
             CandidateListItem(
                 id=c.id,
@@ -66,6 +68,8 @@ async def list_candidates(
                 session_status=best.status if best else None,
                 session_phase=best.phase if best else None,
                 completed_sets=completed_sets,
+                generation_status=gen.generation_status if gen else "idle",
+                generation_error=gen.generation_error if gen else None,
             )
         )
     return items
@@ -130,6 +134,16 @@ async def generate_profile(
     _admin: User = Depends(require_admin),
 ):
     """Generate a new role profile using Claude + web search, save it to disk."""
+    slug = re.sub(r"[^a-z0-9]+", "_", body.role_name.lower()).strip("_")[:60].strip("_")
+    if not re.fullmatch(r"[a-z0-9_]{1,60}", slug):
+        raise HTTPException(status_code=422, detail="Role name must contain letters or numbers.")
+    try:
+        profile_path = resolve_inside(settings.PROFILES_DIR, f"{slug}.md")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid role name.")
+    if os.path.exists(profile_path):
+        raise HTTPException(status_code=409, detail="A profile with this name already exists.")
+
     guide_path = os.path.join(settings.SYSTEM_DIR, "profile-generation-guide.md")
     example_path = os.path.join(settings.PROFILES_DIR, "netsuite_administrator.md")
 
@@ -196,11 +210,11 @@ async def generate_profile(
         raise HTTPException(status_code=500, detail="Claude did not return a valid profile.")
     profile_text = profile_text[idx:].strip()
 
-    # Derive slug from role_name
-    slug = re.sub(r"[^a-z0-9]+", "_", body.role_name.lower()).strip("_")
-    profile_path = os.path.join(settings.PROFILES_DIR, f"{slug}.md")
-    with open(profile_path, "w", encoding="utf-8") as f:
-        f.write(profile_text)
+    try:
+        with open(profile_path, "x", encoding="utf-8") as f:
+            f.write(profile_text)
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail="A profile with this name already exists.")
 
     # Reload cache so new profile appears immediately
     reload_system_files()

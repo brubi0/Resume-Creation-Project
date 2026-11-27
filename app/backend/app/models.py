@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, Index, Text, text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -51,6 +51,13 @@ class Session(Base):
         JSONB, server_default=text("'{}'::jsonb")
     )
     status: Mapped[str] = mapped_column(default="active")
+    generation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="idle", server_default="idle"
+    )
+    generation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generation_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.utcnow()
     )
@@ -124,6 +131,12 @@ class Deliverable(Base):
     type: Mapped[str] = mapped_column(nullable=False)
     filename: Mapped[str] = mapped_column(nullable=False)
     file_path: Mapped[str] = mapped_column(nullable=False)
+    posting_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("postings.id", ondelete="SET NULL"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="base", server_default="base"
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.utcnow()
     )

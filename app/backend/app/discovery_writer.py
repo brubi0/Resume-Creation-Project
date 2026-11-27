@@ -14,8 +14,8 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-from app.config import settings
 from app.models import Session
+from app.storage import session_dir as _session_dir
 
 
 # Map discovery_data keys to human-readable labels
@@ -51,7 +51,7 @@ def _label(key: str) -> str:
 
 
 def session_dir(session: Session) -> str:
-    return os.path.join(settings.DELIVERABLES_DIR, str(session.id))
+    return str(_session_dir(session.id))
 
 
 def discovery_md_path(session: Session) -> str:
