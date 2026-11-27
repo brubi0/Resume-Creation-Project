@@ -365,3 +365,42 @@ async def test_late_reply_after_documents_generated_keeps_status_and_resume(
         assert row.turn_state == "idle"
     msgs = await _messages(client, c)
     assert [m["status"] for m in msgs] == ["ok", "ok"]
+
+
+async def test_stale_pending_turn_resolves_on_read_and_retry_has_no_duplicate(client, fake_claude):
+    c = await make_candidate(client, "Stan Logistics")
+    cmid = uuid.uuid4()
+    async with async_session() as db:
+        row = Session(user_id=c["id"], phase=1, turn_state="pending",
+                      turn_started_at=datetime.now(timezone.utc) - timedelta(minutes=10))
+        db.add(row)
+        await db.flush()
+        db.add(Message(session_id=row.id, role="user", content="my answer", phase=1,
+                       status="pending", client_message_id=cmid))
+        await db.commit()
+        sid = str(row.id)
+    msgs = await _messages(client, c)
+    assert [(m["content"], m["status"]) for m in msgs] == [("my answer", "failed")]
+    s = await _get_session(client, c)
+    assert s["turn_state"] == "idle" and s["id"] == sid
+    st = (await client.get("/api/chat/status", headers=c["headers"])).json()
+    assert st["status"] == "active"
+    fake_claude.script("Thanks Stan.")
+    r = await _send(client, c, "my answer", sid=sid, cmid=str(cmid))
+    assert r.status_code == 200
+    msgs = await _messages(client, c)
+    assert [(m["role"], m["status"]) for m in msgs] == [("user", "ok"), ("assistant", "ok")]
+
+
+async def test_fresh_pending_turn_is_not_resolved_on_read(client):
+    c = await make_candidate(client, "Fern Marketing")
+    async with async_session() as db:
+        row = Session(user_id=c["id"], phase=1, turn_state="pending",
+                      turn_started_at=datetime.now(timezone.utc) - timedelta(seconds=20))
+        db.add(row)
+        await db.flush()
+        db.add(Message(session_id=row.id, role="user", content="x", phase=1, status="pending",
+                       client_message_id=uuid.uuid4()))
+        await db.commit()
+    assert [m["status"] for m in await _messages(client, c)] == ["pending"]
+    assert (await _get_session(client, c))["turn_state"] == "pending"

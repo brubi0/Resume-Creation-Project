@@ -95,6 +95,36 @@ def _bump(session: Session) -> None:
     session.version = (session.version or 0) + 1
 
 
+async def _resolve_stale_turn(db: AsyncSession, session: Session) -> Session:
+    """Read-side recovery: a turn left pending past TURN_STALE_AFTER (restart/deploy
+    mid-turn) is released and its pending messages marked failed, so the client can
+    offer Try again. Locks and re-checks; a late reply is then dropped by _owns_turn."""
+    started = session.turn_started_at
+    if (
+        session.turn_state != "pending"
+        or started is None
+        or datetime.now(timezone.utc) - started < TURN_STALE_AFTER
+    ):
+        return session
+    locked = await _lock_session_row(db, session.id)
+    started = locked.turn_started_at
+    if (
+        locked.turn_state == "pending"
+        and (started is None or datetime.now(timezone.utc) - started >= TURN_STALE_AFTER)
+    ):
+        await db.execute(
+            update(Message)
+            .where(Message.session_id == locked.id, Message.status == "pending")
+            .values(status="failed")
+        )
+        locked.turn_state = "idle"
+        locked.turn_started_at = None
+        _bump(locked)
+    await db.commit()
+    await db.refresh(locked)
+    return locked
+
+
 def _json(status: int, code: str, message: str) -> JSONResponse:
     # "detail" keeps the current frontend's generic error display working.
     return JSONResponse(
@@ -108,7 +138,7 @@ async def get_session(
     user: User = Depends(require_candidate),
 ):
     session = await get_or_create_session(user, db)
-    return session
+    return await _resolve_stale_turn(db, session)
 
 
 @router.get("/messages", response_model=list[MessageResponse])
@@ -117,6 +147,7 @@ async def get_messages(
     user: User = Depends(require_candidate),
 ):
     session = await get_or_create_session(user, db)
+    session = await _resolve_stale_turn(db, session)
     result = await db.execute(
         select(Message)
         .where(Message.session_id == session.id)
@@ -569,6 +600,7 @@ async def get_status(
     user: User = Depends(require_candidate),
 ):
     session = await get_or_create_session(user, db)
+    session = await _resolve_stale_turn(db, session)
     return ChatStatusResponse(
         phase=session.phase,
         experience_level=session.experience_level,
