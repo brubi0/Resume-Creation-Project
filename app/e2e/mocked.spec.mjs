@@ -151,6 +151,43 @@ async function chatInProgress(browser, vp) {
   await ctx.close();
 }
 
+async function chatNewMessage409(browser, vp) {
+  // The server never stores the message (409 before it is saved): the text must survive the poll.
+  let polls = 0;
+  let sends = 0;
+  const reply = msg(7, "assistant", "Got it. What was the biggest obstacle along the way?");
+  const { ctx, page, calls } = await open(browser, vp, CANDIDATE, "/chat", chatHandlers({
+    "POST /chat/send": (_r, route) => {
+      sends += 1;
+      if (sends === 1) return json(route, 409, { code: "turn_in_progress", detail: "busy", message: "busy" });
+      return json(route, 200, reply);
+    },
+    "GET /chat/session": (_r, route) => {
+      polls += 1;
+      return json(route, 200, { ...SESSION, turn_state: polls <= 2 ? "pending" : "idle" });
+    },
+  }));
+  const text = "We trained two apprentices on the dispatch board.";
+  await page.getByPlaceholder("Type your answer").fill(text);
+  await page.keyboard.press("Enter");
+  await page.getByText("Still working on your last message").waitFor({ timeout: 8000 });
+  check(`[${vp.name}] unsent message stays visible while polling`, (await page.getByText(text).count()) === 1);
+  await page.getByText("Still working on your last message").waitFor({ state: "detached", timeout: 20000 });
+  check(`[${vp.name}] unsent message still visible after the poll, with Try again`,
+    (await page.getByText(text).count()) === 1 && (await page.getByRole("button", { name: "Try again" }).isVisible()));
+  const getsAtIdle = calls.filter((c) => c.key === "GET /chat/session").length;
+  await page.waitForTimeout(4000);
+  check(`[${vp.name}] polling stops once the server reports idle`,
+    calls.filter((c) => c.key === "GET /chat/session").length === getsAtIdle);
+  await shot(page, vp, "chat-unsent-409");
+  await page.getByRole("button", { name: "Try again" }).click();
+  await page.getByText("biggest obstacle along the way").waitFor({ timeout: 8000 });
+  const sent = calls.filter((c) => c.key === "POST /chat/send");
+  check(`[${vp.name}] Try again resends the same client_message_id`,
+    sent.length === 2 && sent[0].body.client_message_id === sent[1].body.client_message_id);
+  await ctx.close();
+}
+
 async function chatReplaced(browser, vp) {
   const { ctx, page } = await open(browser, vp, CANDIDATE, "/chat", chatHandlers({
     "POST /chat/send": (_r, route) => json(route, 409, { code: "session_replaced", detail: "replaced", message: "replaced" }),
@@ -307,7 +344,7 @@ const main = async () => {
   const browser = await chromium.launch();
   try {
     for (const vp of VIEWPORTS) {
-      for (const fn of [loginFlow, chatRetry, chatInProgress, chatReplaced, adminStates, documents]) {
+      for (const fn of [loginFlow, chatRetry, chatInProgress, chatNewMessage409, chatReplaced, adminStates, documents]) {
         try {
           await fn(browser, vp);
         } catch (e) {

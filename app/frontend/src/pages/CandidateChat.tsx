@@ -91,7 +91,14 @@ export default function CandidateChat() {
             api.get("/chat/session"),
           ]);
           const list: Message[] = m.data;
-          setMessages(list);
+          const serverIds = new Set(list.map((x) => x.client_message_id).filter(Boolean));
+          // Keep messages the server never stored (marked failed, Try again) at the end.
+          setMessages((prev) => [
+            ...list,
+            ...prev.filter(
+              (x) => x.id.startsWith("local-") && !(x.client_message_id && serverIds.has(x.client_message_id))
+            ),
+          ]);
           setSessionId(s.data.id);
           if (s.data.turn_state === "pending") {
             schedulePoll(attempt + 1);
@@ -205,6 +212,9 @@ export default function CandidateChat() {
         markFailed();
         setReplaced(true);
       } else if (e.response?.status === 409 && code === "turn_in_progress") {
+        // The server may never have stored this message: keep it in the thread as
+        // not sent (Try again resends the same client_message_id once the turn is free).
+        markFailed();
         schedulePoll(0);
       } else {
         // network error, 503, 422 or anything else: the answer stays in the thread
