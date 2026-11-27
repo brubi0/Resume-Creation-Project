@@ -13,6 +13,7 @@ Stage 4 makes the seam async; update FakeClaude then.
 
 import asyncio
 import os
+import threading
 import time
 import types
 import uuid
@@ -116,6 +117,11 @@ class FakeClaude:
       - Exception instance: raised
       - callable(kwargs) -> str | Exception: evaluated per call
       - ("sleep", seconds, item): blocks (sync seam at Stage 1) then behaves as item
+      - ("wait", threading.Event, item): blocks the calling thread (bounded 20 s) until the
+        event is set, then behaves as item. `started` is set as soon as a call begins, so
+        a test can wait for "reply in flight" deterministically (await
+        asyncio.to_thread(fake.started.wait, 10)). Calls run in worker threads, so
+        blocking here never blocks the event loop.
     Any call with an empty queue fails the test.
     """
 
@@ -123,6 +129,7 @@ class FakeClaude:
         self.queue: list = []
         self.calls: list[dict] = []
         self.unscripted = 0
+        self.started = threading.Event()
 
     def script(self, *items):
         self.queue.extend(items)
@@ -134,8 +141,12 @@ class FakeClaude:
             self.unscripted += 1
             raise AssertionError("unscripted Claude call in test")
         item = self.queue.pop(0)
+        self.started.set()
         if isinstance(item, tuple) and item and item[0] == "sleep":
             time.sleep(item[1])
+            item = item[2]
+        elif isinstance(item, tuple) and item and item[0] == "wait":
+            assert item[1].wait(20), "test never released the gated fake reply"
             item = item[2]
         if callable(item) and not isinstance(item, Exception):
             item = item(kwargs)

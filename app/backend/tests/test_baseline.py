@@ -133,7 +133,6 @@ async def test_pandoc_failure_does_not_register_docx(client, admin_headers, fake
     assert s.generation_status == "failed"
 
 
-@pytest.mark.xfail(strict=True, reason="META from the model is applied unvalidated (phase 99, status deliverables_generated)")
 async def test_meta_phase_and_status_are_validated(client, fake_claude):
     c = await make_candidate(client, "Gina Marketing")
     fake_claude.script('Sure.<!--META:{"phase": 99, "status": "deliverables_generated"}-->')
@@ -144,13 +143,12 @@ async def test_meta_phase_and_status_are_validated(client, fake_claude):
     assert s["status"] == "active"
 
 
-@pytest.mark.xfail(strict=True, reason="new-session has no lock or idempotency: concurrent calls each create a session instead of one replacing the current one")
 async def test_concurrent_new_session_creates_exactly_one(client):
     c = await make_candidate(client, "Hank Nursing")
     old = (await client.get("/api/chat/session", headers=c["headers"])).json()["id"]
     rs = await asyncio.gather(*[
         client.post("/api/chat/new-session", json={"replaces_session_id": old},
-                    headers=c["headers"]) for _ in range(8)
+                    headers=c["headers"]) for _ in range(10)
     ])
     assert all(r.status_code == 200 for r in rs)
     async with async_session() as db:

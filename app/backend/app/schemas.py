@@ -55,6 +55,12 @@ class CandidateListItem(BaseModel):
 
 class MessageSend(BaseModel):
     content: str
+    session_id: uuid.UUID | None = None
+    client_message_id: uuid.UUID | None = None
+
+
+class NewSessionRequest(BaseModel):
+    replaces_session_id: uuid.UUID | None = None
 
 
 class MessageResponse(BaseModel):
@@ -62,6 +68,8 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     phase: int
+    status: str = "ok"
+    client_message_id: uuid.UUID | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -79,6 +87,8 @@ class SessionResponse(BaseModel):
     job_description: str | None
     resume_text: str | None
     status: str
+    version: int = 0
+    turn_state: str = "idle"
     created_at: datetime
 
     model_config = {"from_attributes": True}

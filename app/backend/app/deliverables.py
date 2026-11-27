@@ -25,7 +25,7 @@ from app.config import settings
 from app.database import async_session
 from app.discovery_writer import read_discovery_md, write_discovery_md
 from app.models import Deliverable, Posting, Session
-from app.prompts import _load_system_files
+from app.prompts import _load_system_files, wrap_candidate_document
 from app.storage import (
     download_name,
     resolve_inside,
@@ -363,7 +363,7 @@ def _candidate_context(session, discovery_md: str) -> str:
             "\n\n## Candidate's Original Resume (reference only)\n"
             "Use it for facts, dates, employers and contact details the interview didn't cover; "
             "where it conflicts with the interview answers, the interview wins.\n\n"
-            f"{session.resume_text}"
+            f"{wrap_candidate_document(session.resume_text)}"
         )
     return out
 
@@ -423,7 +423,7 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
             f"- {HEADER_RULE}\n"
         ),
         (
-            f"Job Posting — {company} ({role}):\n\n{posting_text}\n\n"
+            f"Job Posting — {company} ({role}):\n\n{wrap_candidate_document(posting_text)}\n\n"
             f"Base Resume:\n\n{base_resume if base_resume else discovery_md}\n\n"
             f"Generate the targeted resume variant. Rewrite only the Summary."
         ),
@@ -442,7 +442,7 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
             stage, "cover", ".md", "cover letter",
             f"You are a cover letter writer.\n\n{output_formats}\n\n{HEADER_RULE}",
             (
-                f"Job Posting — {company} ({role}):\n\n{posting_text}\n\n"
+                f"Job Posting — {company} ({role}):\n\n{wrap_candidate_document(posting_text)}\n\n"
                 f"Candidate Discovery Data:\n\n{discovery_md}\n\n"
                 f"Base Resume:\n\n{base_resume}\n\n"
                 f"Write a targeted cover letter for this specific role and company. "
