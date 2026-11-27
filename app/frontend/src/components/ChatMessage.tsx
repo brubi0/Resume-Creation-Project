@@ -5,6 +5,11 @@ interface Props {
   content: string;
   timestamp: string;
   isNew?: boolean;
+  /** "failed" marks a user message the server never answered. */
+  status?: "ok" | "pending" | "failed";
+  /** Present only on the last failed message: resends the same client_message_id. */
+  onRetry?: () => void;
+  retryDisabled?: boolean;
 }
 
 export default function ChatMessage({
@@ -12,6 +17,9 @@ export default function ChatMessage({
   content,
   timestamp,
   isNew = false,
+  status = "ok",
+  onRetry,
+  retryDisabled = false,
 }: Props) {
   const isUser = role === "user";
   const time = new Date(timestamp).toLocaleTimeString([], {
@@ -28,7 +36,23 @@ export default function ChatMessage({
               <ReactMarkdown>{content}</ReactMarkdown>
             </div>
           </div>
-          <p className="mt-1.5 text-right text-xs text-slate">{time}</p>
+          {isUser && status === "failed" ? (
+            <p className="mt-1.5 flex items-center justify-end gap-2 text-xs text-danger" role="status">
+              <span>Not sent.</span>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  disabled={retryDisabled}
+                  className="rounded px-1.5 py-0.5 font-medium text-ink underline underline-offset-2 hover:text-ink/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40"
+                >
+                  Try again
+                </button>
+              )}
+            </p>
+          ) : (
+            <p className="mt-1.5 text-right text-xs text-slate">{time}</p>
+          )}
         </div>
       ) : (
         <div>

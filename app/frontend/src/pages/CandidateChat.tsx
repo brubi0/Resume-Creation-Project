@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 import { useAuth } from "../auth-context";
@@ -15,6 +15,8 @@ interface Message {
   content: string;
   phase: number;
   created_at: string;
+  status?: "ok" | "pending" | "failed";
+  client_message_id?: string | null;
 }
 
 interface SessionStatus {
@@ -23,6 +25,21 @@ interface SessionStatus {
   profile_slug: string | null;
   job_description: string | null;
   status: string;
+}
+
+const KICKOFF_TEXT = "Hello, I'd like help with my resume.";
+const POLL_MS = 3000;
+const POLL_MAX = 20;
+
+// crypto.randomUUID needs a secure context (https or localhost); fall back to a v4 otherwise.
+function newId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 const COMPLETE_STATUSES = ["complete", "deliverables_generated", "interview_complete"];
@@ -39,7 +56,60 @@ export default function CandidateChat() {
   const [showJdModal, setShowJdModal] = useState(false);
   const [showJdView, setShowJdView] = useState(false);
   const [newMsgId, setNewMsgId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [replaced, setReplaced] = useState(false);
+  const [waiting, setWaiting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const pollTimer = useRef<number | null>(null);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimer.current !== null) {
+      window.clearTimeout(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+  useEffect(() => stopPolling, [stopPolling]);
+
+  // Another request (a retry, a refresh mid-turn) holds the turn: refetch every 3 s,
+  // at most POLL_MAX times, until the server says it is idle.
+  const schedulePoll = useCallback(
+    (attempt: number) => {
+      stopPolling();
+      if (attempt >= POLL_MAX) {
+        setWaiting(false);
+        setNotice("This is taking longer than expected. Refresh the page to check.");
+        return;
+      }
+      setWaiting(true);
+      setNotice("Still working on your last message…");
+      pollTimer.current = window.setTimeout(async () => {
+        pollTimer.current = null;
+        try {
+          const [m, s] = await Promise.all([
+            api.get("/chat/messages"),
+            api.get("/chat/session"),
+          ]);
+          const list: Message[] = m.data;
+          setMessages(list);
+          setSessionId(s.data.id);
+          if (s.data.turn_state === "pending") {
+            schedulePoll(attempt + 1);
+            return;
+          }
+          const statusRes = await api.get("/chat/status");
+          setStatus(statusRes.data);
+          const last = list[list.length - 1];
+          if (last && last.role === "assistant") setNewMsgId(last.id);
+          setWaiting(false);
+          setNotice(null);
+        } catch {
+          schedulePoll(attempt + 1);
+        }
+      }, POLL_MS);
+    },
+    [stopPolling]
+  );
 
   const isComplete = COMPLETE_STATUSES.includes(status?.status ?? "");
   // "New session" = active with no messages yet, regardless of phase
@@ -63,6 +133,10 @@ export default function CandidateChat() {
           status: sessionRes.data.status,
         });
         setMessages(messagesRes.data);
+        setSessionId(sessionRes.data.id);
+
+        // A reply may still be in flight (refresh mid-turn): wait for it.
+        if (sessionRes.data.turn_state === "pending") schedulePoll(0);
 
         // New active session with no messages — run onboarding modals
         if (messagesRes.data.length === 0 && sessionRes.data.status === "active") {
@@ -81,6 +155,7 @@ export default function CandidateChat() {
       }
     };
     init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-scroll to bottom
@@ -98,31 +173,66 @@ export default function CandidateChat() {
     setShowJdModal(true);
   };
 
-  const kickOffInterview = async () => {
+  // One send path for every turn (kickoff included). A retry passes the SAME
+  // client_message_id, so the server reuses the saved message instead of duplicating it.
+  const sendTurn = async (content: string, cmid: string) => {
     setSending(true);
+    setNotice(null);
+    setMessages((prev) =>
+      prev.map((m) => (m.client_message_id === cmid ? { ...m, status: "pending" } : m))
+    );
+    const markFailed = () =>
+      setMessages((prev) =>
+        prev.map((m) => (m.client_message_id === cmid ? { ...m, status: "failed" } : m))
+      );
     try {
       const res = await api.post("/chat/send", {
-        content: "Hello, I'd like help with my resume.",
+        content,
+        session_id: sessionId ?? undefined,
+        client_message_id: cmid,
       });
-      setMessages([
-        {
-          id: "init-user",
-          role: "user",
-          content: "Hello, I'd like help with my resume.",
-          phase: 0,
-          created_at: new Date().toISOString(),
-        },
+      setMessages((prev) => [
+        ...prev.map((m) => (m.client_message_id === cmid ? { ...m, status: "ok" as const } : m)),
         res.data,
       ]);
       setNewMsgId(res.data.id);
       const statusRes = await api.get("/chat/status");
       setStatus(statusRes.data);
-    } catch {
-      // handled by interceptor
+    } catch (err) {
+      const e = err as { response?: { status?: number; data?: { code?: string } } };
+      const code = e.response?.data?.code;
+      if (e.response?.status === 409 && code === "session_replaced") {
+        markFailed();
+        setReplaced(true);
+      } else if (e.response?.status === 409 && code === "turn_in_progress") {
+        schedulePoll(0);
+      } else {
+        // network error, 503, 422 or anything else: the answer stays in the thread
+        markFailed();
+      }
     } finally {
       setSending(false);
     }
   };
+
+  const addAndSend = (content: string) => {
+    const cmid = newId();
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `local-${cmid}`,
+        role: "user",
+        content,
+        phase: status?.phase ?? 0,
+        created_at: new Date().toISOString(),
+        status: "pending",
+        client_message_id: cmid,
+      },
+    ]);
+    return sendTurn(content, cmid);
+  };
+
+  const kickOffInterview = () => addAndSend(KICKOFF_TEXT);
 
   const handleJdSave = async (jd: string) => {
     try {
@@ -158,34 +268,16 @@ export default function CandidateChat() {
     await kickOffInterview();
   };
 
-  const handleSend = async (content: string) => {
-    const tempMsg: Message = {
-      id: `temp-${Date.now()}`,
-      role: "user",
-      content,
-      phase: status?.phase ?? 0,
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, tempMsg]);
-    setSending(true);
+  const handleSend = (content: string) => addAndSend(content);
 
-    try {
-      const res = await api.post("/chat/send", { content });
-      setMessages((prev) => [...prev, res.data]);
-      setNewMsgId(res.data.id);
-      const statusRes = await api.get("/chat/status");
-      setStatus(statusRes.data);
-    } catch {
-      setMessages((prev) => prev.filter((m) => m.id !== tempMsg.id));
-    } finally {
-      setSending(false);
-    }
+  const handleRetry = (msg: Message) => {
+    if (msg.client_message_id) sendTurn(msg.content, msg.client_message_id);
   };
 
   const handleNewSession = async () => {
     setSending(true);
     try {
-      await api.post("/chat/new-session");
+      await api.post("/chat/new-session", { replaces_session_id: sessionId });
       window.location.reload();
     } catch {
       setSending(false);
@@ -323,15 +415,45 @@ export default function CandidateChat() {
           </div>
         ) : (
           <>
-            {messages.map((msg) => (
+            {messages.map((msg, i) => (
               <ChatMessage
                 key={msg.id}
                 role={msg.role}
                 content={msg.content}
                 timestamp={msg.created_at}
                 isNew={msg.id === newMsgId}
+                status={msg.status}
+                onRetry={
+                  msg.status === "failed" && i === messages.length - 1
+                    ? () => handleRetry(msg)
+                    : undefined
+                }
+                retryDisabled={sending || waiting}
               />
             ))}
+
+            {notice && !replaced && (
+              <div className="mx-auto mb-7 max-w-[68ch]" role="status">
+                <p className="font-serif text-[15px] italic text-slate">{notice}</p>
+              </div>
+            )}
+
+            {replaced && (
+              <div
+                className="mx-auto mb-7 flex max-w-[68ch] flex-wrap items-center gap-3 rounded-lg border border-rule bg-sheet px-4 py-3"
+                role="alert"
+              >
+                <p className="flex-1 text-[15px] text-ink">
+                  This interview was replaced in another tab.
+                </p>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="rounded-lg bg-ink px-4 py-2 text-sm font-medium text-white hover:bg-ink/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+                >
+                  Reload
+                </button>
+              </div>
+            )}
 
             {sending && (
               <div className="mx-auto mb-7 max-w-[68ch]">
@@ -347,8 +469,8 @@ export default function CandidateChat() {
       </div>
 
       {/* Input — hide for completed sessions */}
-      {!isComplete && !isNewSession && (
-        <ChatInput onSend={handleSend} disabled={sending} />
+      {!isComplete && !isNewSession && !replaced && (
+        <ChatInput onSend={handleSend} disabled={sending || waiting} />
       )}
     </div>
   );
