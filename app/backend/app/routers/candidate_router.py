@@ -126,15 +126,33 @@ async def _lock_session_row(db: AsyncSession, session_id) -> Session:
     return result.scalar_one()
 
 
-async def _end_turn(db: AsyncSession, session_id, user_msg_id, *, status: str) -> None:
+def _owns_turn(session: Session, msg: Message | None, claimed_at: datetime) -> bool:
+    """True while this request still holds the turn it claimed in Tx A.
+
+    A turn older than TURN_STALE_AFTER can be taken over by a newer send (e.g. a
+    retry while a slow model call is still running). The newer send marks our
+    message failed and re-stamps turn_started_at, so a late reply must not apply
+    its updates or release the newer turn.
+    """
+    return (
+        msg is not None
+        and msg.status == "pending"
+        and session.turn_state == "pending"
+        and session.turn_started_at == claimed_at
+    )
+
+
+async def _end_turn(
+    db: AsyncSession, session_id, user_msg_id, claimed_at: datetime, *, status: str
+) -> None:
     """Tx C / failed-B: mark the user's message and release the turn. Keeps the answer."""
     session = await _lock_session_row(db, session_id)
     msg = await db.get(Message, user_msg_id, populate_existing=True)
-    if msg is not None and msg.status == "pending":
+    if _owns_turn(session, msg, claimed_at):
         msg.status = status
-    session.turn_state = "idle"
-    session.turn_started_at = None
-    _bump(session)
+        session.turn_state = "idle"
+        session.turn_started_at = None
+        _bump(session)
     await db.commit()
 
 
@@ -250,7 +268,7 @@ async def send_message(
         clean_text, metas = await chat_with_claude(system_prompt, api_messages)
     except Exception as exc:  # Stage 4 maps provider errors precisely
         logger.warning("session=%s model call failed: %s", sid, type(exc).__name__)
-        await _end_turn(db, sid, user_msg_id, status="failed")
+        await _end_turn(db, sid, user_msg_id, now, status="failed")
         return _json(
             503,
             "model_unavailable",
@@ -261,8 +279,14 @@ async def send_message(
     session = await _lock_session_row(db, sid)
     current = await _latest_session(user, db)
     if session.status == "abandoned" or current is None or current.id != sid:
-        await _end_turn(db, sid, user_msg_id, status="failed")
+        await _end_turn(db, sid, user_msg_id, now, status="failed")
         return _json(409, "session_replaced", "This interview was replaced. Reload to continue.")
+
+    user_msg = await db.get(Message, user_msg_id, populate_existing=True)
+    if not _owns_turn(session, user_msg, now):
+        # A newer send took over this (stale) turn; drop this late reply.
+        await db.rollback()
+        return _json(409, "turn_in_progress", "A newer message took over. Please wait.")
 
     accepted, _rejected = validate_updates(
         session, metas, available_profiles=get_available_profiles()
@@ -277,9 +301,7 @@ async def send_message(
     db.add(assistant_msg)
     for key, value in accepted.items():
         setattr(session, key, value)
-    user_msg = await db.get(Message, user_msg_id, populate_existing=True)
-    if user_msg is not None:
-        user_msg.status = "ok"
+    user_msg.status = "ok"
     session.turn_state = "idle"
     session.turn_started_at = None
     _bump(session)

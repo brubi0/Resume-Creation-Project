@@ -297,3 +297,34 @@ async def test_valid_meta_is_applied_and_hidden(client, fake_claude):
     async with async_session() as db:
         row = (await db.execute(select(Session).where(Session.user_id == c["id"]))).scalar_one()
     assert row.discovery_data == {"candidate_name": "Vera Valid"}
+
+
+async def test_late_reply_after_takeover_does_not_clobber_newer_turn(client, fake_claude):
+    """A slow turn goes stale, a newer send takes over; the late reply must be dropped
+    and must not release the newer turn or apply its META."""
+    c = await make_candidate(client, "Late Lina")
+    sid = (await _get_session(client, c))["id"]
+    task, gate = await _gated_send(client, fake_claude, c, "slow answer", sid=sid,
+                                   cmid=str(uuid.uuid4()))
+    # Age the in-flight turn past the stale window.
+    async with async_session() as db:
+        row = await db.get(Session, uuid.UUID(sid))
+        row.turn_started_at = row.turn_started_at - timedelta(minutes=10)
+        await db.commit()
+    # The newer send takes over and is itself held in flight.
+    task2, gate2 = await _gated_send(client, fake_claude, c, "newer answer", sid=sid,
+                                     cmid=str(uuid.uuid4()))
+    # Release the stale reply first: it must be dropped.
+    gate.set()
+    late = await asyncio.wait_for(task, 15)
+    assert late.status_code == 409
+    async with async_session() as db:
+        row = await db.get(Session, uuid.UUID(sid))
+        assert row.turn_state == "pending"  # the newer turn still holds it
+    gate2.set()
+    newer = await asyncio.wait_for(task2, 15)
+    assert newer.status_code == 200
+    msgs = await _messages(client, c)
+    assert [(m["role"], m["content"], m["status"]) for m in msgs if m["role"] == "user"] == [
+        ("user", "slow answer", "failed"), ("user", "newer answer", "ok")]
+    assert sum(1 for m in msgs if m["role"] == "assistant") == 1
