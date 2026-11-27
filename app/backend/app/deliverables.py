@@ -17,10 +17,18 @@ import subprocess
 import uuid
 from pathlib import Path
 
-import anthropic
 from sqlalchemy import delete, select, text, update
 
-from app.claude_client import ClaudeRefusal, response_text, stream_message
+from app.claude_client import (
+    ClaudeConfigError,
+    ClaudeEmpty,
+    ClaudeRefusal,
+    ClaudeTruncated,
+    ClaudeUnavailable,
+    DOC_TIMEOUT,
+    response_text,
+    stream_message,
+)
 from app.config import settings
 from app.database import async_session
 from app.discovery_writer import read_discovery_md, write_discovery_md
@@ -35,8 +43,6 @@ from app.storage import (
 )
 
 log = logging.getLogger("resume.generation")
-
-client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 # Thinking counts toward max_tokens; documents run several thousand tokens.
 MAX_TOKENS = 32000
@@ -101,6 +107,12 @@ async def _guarded(session_id: uuid.UUID, work) -> None:
         msg = str(e)
     except ClaudeRefusal:
         msg = "The AI declined to write this document. Review the interview notes and try again."
+    except ClaudeTruncated:
+        msg = "The AI ran out of room writing this document. Try again."
+    except ClaudeUnavailable:
+        msg = "The AI service was unavailable. Try again in a few minutes."
+    except ClaudeConfigError:
+        msg = "The AI service is not configured correctly. Contact support."
     except Exception:
         log.exception("generation failed session=%s", session_id)
         msg = "Document generation failed unexpectedly. Try again."
@@ -127,18 +139,17 @@ def _inputs_hash(system: str, user_content: str) -> str:
 
 async def _generate_with_claude(system: str, user_content: str) -> str:
     # Streamed: long document generations can exceed non-streaming HTTP timeouts.
-    # The SDK client is synchronous, so run it off the event loop.
-    def call() -> str:
-        response = stream_message(
-            client,
-            effort="high",
-            max_tokens=MAX_TOKENS,
-            system=system,
-            messages=[{"role": "user", "content": user_content}],
-        )
+    response = await stream_message(
+        effort="high",
+        timeout=DOC_TIMEOUT,
+        max_tokens=MAX_TOKENS,
+        system=system,
+        messages=[{"role": "user", "content": user_content}],
+    )
+    try:
         return response_text(response)
-
-    return await asyncio.to_thread(call)
+    except ClaudeEmpty:
+        return ""  # the caller reports which document came back empty
 
 
 async def _stage_text(stage: Path, key: str, ext: str, label: str, system: str, user: str) -> str:

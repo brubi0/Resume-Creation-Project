@@ -9,7 +9,14 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_candidate
-from app.claude_service import chat_with_claude
+from app.claude_client import (
+    ClaudeConfigError,
+    ClaudeEmpty,
+    ClaudeRefusal,
+    ClaudeTruncated,
+    ClaudeUnavailable,
+)
+from app.claude_service import EmptyReply, chat_with_claude
 from app.database import get_db
 from app.discovery_writer import write_discovery_md
 from app.models import Message, Session, User
@@ -33,6 +40,7 @@ router = APIRouter()
 
 _ADVISORY_LOCK_SQL = text("SELECT pg_advisory_xact_lock(hashtext(:key))")
 TURN_STALE_AFTER = timedelta(minutes=3)
+_UNAVAILABLE_MSG = "The interviewer didn't respond. Your answer is saved; tap Try again."
 
 
 def _current_query(user: User):
@@ -266,14 +274,25 @@ async def send_message(
     # ---- Model call: no transaction, no lock ------------------------------
     try:
         clean_text, metas = await chat_with_claude(system_prompt, api_messages)
-    except Exception as exc:  # Stage 4 maps provider errors precisely
+    except (ClaudeUnavailable, ClaudeTruncated, ClaudeEmpty, EmptyReply) as exc:
         logger.warning("session=%s model call failed: %s", sid, type(exc).__name__)
         await _end_turn(db, sid, user_msg_id, now, status="failed")
+        return _json(503, "model_unavailable", _UNAVAILABLE_MSG)
+    except ClaudeRefusal:
+        logger.warning("session=%s model refused", sid)
+        await _end_turn(db, sid, user_msg_id, now, status="failed")
         return _json(
-            503,
-            "model_unavailable",
-            "The assistant couldn't reply just now. Your answer was saved; please try again.",
+            422,
+            "model_refused",
+            "The interviewer couldn't answer that message. Try rephrasing it, then tap Try again.",
         )
+    except ClaudeConfigError:
+        await _end_turn(db, sid, user_msg_id, now, status="failed")
+        return _json(503, "model_unavailable", "The interviewer is unavailable right now.")
+    except Exception as exc:
+        logger.error("session=%s model call failed unexpectedly: %s", sid, type(exc).__name__)
+        await _end_turn(db, sid, user_msg_id, now, status="failed")
+        return _json(503, "model_unavailable", _UNAVAILABLE_MSG)
 
     # ---- Tx B: re-lock, validate against the fresh row, apply -------------
     session = await _lock_session_row(db, sid)

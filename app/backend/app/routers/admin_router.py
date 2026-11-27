@@ -1,14 +1,21 @@
 import os
 import re
 
-import anthropic
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import hash_password, require_admin
-from app.claude_client import ClaudeRefusal, create_message, response_text
+from app.claude_client import (
+    ClaudeConfigError,
+    ClaudeEmpty,
+    ClaudeRefusal,
+    ClaudeTruncated,
+    ClaudeUnavailable,
+    create_message,
+    response_text,
+)
 from app.config import settings
 from app.database import get_db
 from app.models import Session, User
@@ -16,7 +23,6 @@ from app.prompts import get_profile_metadata, reload_system_files
 from app.storage import resolve_inside
 from app.schemas import CandidateCreate, CandidateListItem, ProfileGenerateRequest, ProfileItem
 
-_claude = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 router = APIRouter()
 
@@ -184,30 +190,40 @@ async def generate_profile(
             # Not streamed: the pinned SDK's stream accumulator drops server_tool_use
             # inputs, and a pause_turn must be sent back unchanged. 16000 stays under
             # the SDK's non-streaming limit.
-            response = create_message(
-                _claude,
+            response = await create_message(
                 effort="high",
                 max_tokens=16000,
                 system=system_prompt,
                 tools=[{"type": "web_search_20260209", "name": "web_search"}],
                 messages=messages,
             )
-            text = response_text(response)
+            if response.stop_reason == "pause_turn":
+                # Server-side web search paused mid-turn: send the turn back to resume it.
+                messages.append({"role": "assistant", "content": response.content})
+                continue
+            profile_text = response_text(response)
         except ClaudeRefusal:
             raise HTTPException(status_code=422, detail="Claude declined to generate this profile.")
-
-        if response.stop_reason == "pause_turn":
-            # Server-side web search paused mid-turn: send the turn back to resume it.
-            messages.append({"role": "assistant", "content": response.content})
-            continue
-        profile_text = text
+        except (ClaudeTruncated, ClaudeEmpty):
+            raise HTTPException(
+                status_code=422,
+                detail="Claude's reply was incomplete. Try again.",
+            )
+        except ClaudeUnavailable:
+            raise HTTPException(
+                status_code=503, detail="The AI service is unavailable right now. Try again shortly."
+            )
+        except ClaudeConfigError:
+            raise HTTPException(
+                status_code=503, detail="The AI service is not configured correctly."
+            )
         break
 
     # Strip anything before the profile header
     marker = "# Profile:"
     idx = profile_text.find(marker)
     if idx == -1:
-        raise HTTPException(status_code=500, detail="Claude did not return a valid profile.")
+        raise HTTPException(status_code=422, detail="Claude did not return a valid profile. Try again.")
     profile_text = profile_text[idx:].strip()
 
     try:
