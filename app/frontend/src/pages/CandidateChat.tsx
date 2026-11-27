@@ -424,7 +424,7 @@ export default function CandidateChat() {
                 isNew={msg.id === newMsgId}
                 status={msg.status}
                 onRetry={
-                  msg.status === "failed" && i === messages.length - 1
+                  msg.status === "failed" && i === messages.length - 1 && !replaced
                     ? () => handleRetry(msg)
                     : undefined
                 }
