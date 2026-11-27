@@ -104,8 +104,11 @@ def test_discovery_complete_counts_skipped():
 
 
 def test_status_rules():
-    s3 = sess(phase=3, experience_level="experienced")
-    assert val(s3, {"status": "interview_complete"})[0] == {"status": "interview_complete"}
+    s3 = sess(phase=3, experience_level="experienced", resume_draft="# R", approved_resume=None)
+    assert val(s3, {"status": "interview_complete"})[0] == {
+        "status": "interview_complete", "approved_resume": "# R"}
+    # no draft: rejected, even in phase 3
+    assert val(sess(phase=3, experience_level="experienced"), {"status": "interview_complete"})[0] == {}
     assert val(sess(phase=2), {"status": "interview_complete"})[0] == {}  # premature
     for bad in ("deliverables_generated", "abandoned", "active", None, "x", 5):
         acc, rej = val(s3, {"status": bad})
@@ -184,6 +187,10 @@ def test_candidate_name_and_skipped_questions():
     assert val(s, {"discovery_update": {"skipped_questions": "a"}})[1]
     assert val(s, {"discovery_update": {"skipped_questions": ["a", 1]}})[1]
     assert val(s, {"discovery_update": {"skipped_questions": ["context"]}})[0]
+    assert val(s, {"discovery_update": {"skipped_questions": ["not_a_question"]}})[1]
+    # early-career ids are not valid for an experienced session, and vice versa
+    assert val(sess(experience_level="experienced"), {"discovery_update": {"skipped_questions": ["internships"]}})[1]
+    assert val(sess(experience_level="early_career"), {"discovery_update": {"skipped_questions": ["internships"]}})[0]
 
 
 def test_rejection_log_has_no_values(caplog):

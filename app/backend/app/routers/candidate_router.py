@@ -21,7 +21,7 @@ from app.database import get_db
 from app.discovery_writer import write_discovery_md
 from app.models import Message, Session, User
 from app.prompts import build_system_prompt, get_available_profiles, get_profile_metadata
-from app.session_state import validate_updates
+from app.session_state import extract_resume, validate_updates
 from app.schemas import (
     ChatStatusResponse,
     JobDescriptionUpdate,
@@ -307,8 +307,11 @@ async def send_message(
         await db.rollback()
         return _json(409, "turn_in_progress", "A newer message took over. Please wait.")
 
+    # RESUME block: strip the markers from what is stored (the text stays), and offer
+    # the draft to the validator, which only takes it in phase 3.
+    clean_text, resume_draft = extract_resume(clean_text)
     accepted, _rejected = validate_updates(
-        session, metas, available_profiles=get_available_profiles()
+        session, metas, available_profiles=get_available_profiles(), resume_draft=resume_draft
     )
     assistant_msg = Message(
         session_id=sid,

@@ -31,8 +31,9 @@ from app.claude_client import (
 )
 from app.config import settings
 from app.database import async_session
-from app.discovery_writer import read_discovery_md, write_discovery_md
-from app.models import Deliverable, Posting, Session
+from app.discovery_writer import write_discovery_md
+from app.interview import QUESTION_LABELS, progress
+from app.models import Deliverable, Message, Posting, Session
 from app.prompts import _load_system_files, wrap_candidate_document
 from app.storage import (
     download_name,
@@ -152,8 +153,15 @@ async def _generate_with_claude(system: str, user_content: str) -> str:
         return ""  # the caller reports which document came back empty
 
 
-async def _stage_text(stage: Path, key: str, ext: str, label: str, system: str, user: str) -> str:
-    """Generate (or reuse, when the prompt inputs are unchanged) one staged text file."""
+async def _stage_text(
+    stage: Path, key: str, ext: str, label: str, system: str, user: str, *, check=None
+) -> str:
+    """Generate (or reuse, when the prompt inputs are unchanged) one staged text file.
+
+    `check(content) -> problem | None` runs on fresh output. A failing document is
+    regenerated once; a second failure fails the run. Only a passing document is
+    ever written, so a bad one can never be reused as a good staged file.
+    """
     path = stage / f"{key}{ext}"
     hash_path = stage / f"{key}.inputs.sha256"
     digest = _inputs_hash(system, user)
@@ -168,6 +176,19 @@ async def _stage_text(stage: Path, key: str, ext: str, label: str, system: str, 
     content = await _generate_with_claude(system, user)
     if not content or not content.strip():
         raise DocumentError(f"The {label} came back empty. Try again.")
+    if check is not None and check(content):
+        retry_user = (
+            f"{user}\n\nYour previous attempt included contact details, placeholders or internal "
+            "markers that were not confirmed. Rewrite the document using only the confirmed contact "
+            "details above; leave out anything not listed. No placeholders."
+        )
+        content = await _generate_with_claude(system, retry_user)
+        if not content or not content.strip():
+            raise DocumentError(f"The {label} came back empty. Try again.")
+        if check(content):
+            raise DocumentError(
+                f"The {label} included contact details or placeholders that weren't confirmed."
+            )
     hash_path.unlink(missing_ok=True)
     path.write_text(content, encoding="utf-8")
     hash_path.write_text(digest)
@@ -286,11 +307,12 @@ def _candidate_name(session: Session) -> str:
 async def _generate_base(session_id: uuid.UUID) -> None:
     session = await _load_session(session_id)
     files = _load_system_files()
-    discovery_json = json.dumps(session.discovery_data or {}, indent=2)
 
-    await asyncio.to_thread(write_discovery_md, session)
-    discovery_md = read_discovery_md(session) or f"```json\n{discovery_json}\n```"
-    candidate_ctx = _candidate_context(session, discovery_md)
+    await asyncio.to_thread(write_discovery_md, session)  # admin-readable copy only
+    messages = await _user_messages(session_id)
+    snapshot = _snapshot_for(session, messages)
+    check = _document_check(session)
+    approved = (session.approved_resume or "").strip()
 
     if session.experience_level == "early_career":
         rules = files.get("system_resume_rules_early_career", "")
@@ -301,30 +323,49 @@ async def _generate_base(session_id: uuid.UUID) -> None:
 
     stage = _staging(session_id, "base")
 
-    resume_md = await _stage_text(
-        stage, "resume", ".md", "resume",
-        f"You are a resume writer. Generate a complete resume in markdown.\n\n{rules}\n\n{output_formats}\n\n{HEADER_RULE}",
-        f"Generate the final resume based on this discovery data:\n\n{candidate_ctx}",
-    )
+    if approved:
+        # The candidate approved this text: it is the resume, verbatim (comments aside).
+        resume_md = strip_comments(approved).strip() + "\n"
+        if check(resume_md):
+            raise DocumentError(
+                "The resume included contact details or placeholders that weren't confirmed."
+            )
+        (stage / "resume.md").write_text(resume_md, encoding="utf-8")
+        (stage / "resume.inputs.sha256").unlink(missing_ok=True)
+        prep_user = f"Generate interview prep based on these facts:\n\n{snapshot}"
+        score_user = f"Evaluate this resume and generate a score card:\n{resume_md}"
+    else:
+        resume_md = await _stage_text(
+            stage, "resume", ".md", "resume",
+            f"You are a resume writer. Generate a complete resume in markdown.\n\n{rules}\n\n{output_formats}\n\n{HEADER_RULE}\n\n{FACT_RULES}",
+            f"Generate the final resume based on these facts:\n\n{snapshot}",
+            check=check,
+        )
+        prep_user = f"Generate interview prep based on these facts:\n\n{snapshot}\n\nResume:\n{resume_md}"
+        score_user = f"Evaluate this resume and generate a score card:\n{resume_md}"
     await _to_docx(stage / "resume.md", stage / "resume.docx")
 
     await _stage_text(
         stage, "prep", ".md", "interview prep guide",
-        f"You are an interview coach. Generate an interview prep guide.\n\n{output_formats}",
-        f"Generate interview prep based on this discovery data:\n\n{candidate_ctx}\n\nResume:\n{resume_md}",
+        f"You are an interview coach. Generate an interview prep guide.\n\n{output_formats}\n\n{FACT_RULES}",
+        prep_user,
+        check=check,
     )
 
     profile = files.get(f"profile_{session.profile_slug}", "") if session.profile_slug else ""
+    matrix_facts = snapshot if approved else f"{snapshot}\n\nResume:\n{resume_md}"
     await _stage_text(
         stage, "matrix", ".html", "skills matrix",
-        f"Generate a skills matrix as a complete HTML file with embedded CSS.\n\n{output_formats}\n\nProfile:\n{profile}",
-        f"Generate the skills matrix based on:\n\n{candidate_ctx}",
+        f"Generate a skills matrix as a complete HTML file with embedded CSS.\n\n{output_formats}\n\nProfile:\n{profile}\n\n{FACT_RULES}",
+        f"Generate the skills matrix based on:\n\n{matrix_facts}",
+        check=check,
     )
 
     await _stage_text(
         stage, "score", ".md", "score card",
-        f"You are a resume evaluator. Generate a score card.\n\n{output_formats}",
-        f"Evaluate this resume and generate a score card:\n{resume_md}",
+        f"You are a resume evaluator. Generate a score card.\n\n{output_formats}\n\n{FACT_RULES}",
+        score_user,
+        check=check,
     )
 
     items = [
@@ -352,31 +393,174 @@ HEADER_RULE = (
 )
 
 
-def _candidate_context(session, discovery_md: str) -> str:
-    """Discovery markdown plus contact details and the original resume, when present."""
+FACT_RULES = (
+    "Fact rules (they override any style guidance above):\n"
+    "- Never invent employers, dates, titles, qualifications, certifications, achievements or numbers.\n"
+    "- Use only numbers that appear in the facts you are given. When a number was described as an "
+    "estimate, keep it marked as approximate (\"about\", \"~\").\n"
+    "- Don't add metrics just to satisfy a quantification rule; a bullet without a number is fine.\n"
+    "- Score cards assess the document's quality. Never predict hiring outcomes or interview probability.\n"
+    "- Interview prep must not invent stories. Where a story is missing, say what the candidate should prepare.\n"
+    "- Contact details: use only the confirmed contact listed. Anything marked as not listed stays out."
+)
+
+_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
+_GAP_RE = re.compile(r"<!--\s*GAP:\s*(.*?)-->", re.DOTALL | re.IGNORECASE)
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_URL_RE = re.compile(r"(?:https?://|www\.)\S+|\b(?:[\w-]+\.)+(?:com|org|net|io|co|edu|dev|me)/\S*", re.IGNORECASE)
+_PHONE_RE = re.compile(
+    r"(?<![\d.])(?:\+?\d{1,2}[ .\-]?)?(?:\(\d{3}\)[ .\-]?|\d{3}[ .\-]?)\d{3}[ .\-]?\d{4}(?!\d)"
+)
+_PLACEHOLDER_RE = re.compile(
+    r"\[(?:phone|email|company)\]|\bXX+%|email@example\.com|555-555-5555|lorem", re.IGNORECASE
+)
+_MARKER_RE = re.compile(r"<!--\s*META|discovery\.md|candidates/", re.IGNORECASE)
+
+CONTACT_FIELDS_LISTED = ("location", "phone", "email", "linkedin", "other")
+
+
+def strip_comments(text: str) -> str:
+    return _COMMENT_RE.sub("", text)
+
+
+def _redact_contact(text: str) -> str:
+    """Remove emails, phone numbers and URLs (legacy upload text only)."""
+    text = _EMAIL_RE.sub("", text)
+    text = _URL_RE.sub("", text)
+    return _PHONE_RE.sub("", text)
+
+
+def _contact(session) -> tuple[dict, list[str]]:
+    c = (session.discovery_data or {}).get("contact")
+    if not isinstance(c, dict):
+        return {}, []
+    omitted = c.get("omitted") if isinstance(c.get("omitted"), list) else []
+    fields = {k: v for k, v in c.items() if k in CONTACT_FIELDS_LISTED and isinstance(v, str) and v.strip()
+              and k not in omitted}
+    return fields, [o for o in omitted if o in CONTACT_FIELDS_LISTED]
+
+
+def _phone_digits(s: str) -> str:
+    d = re.sub(r"\D", "", s)
+    return d[-10:] if len(d) >= 10 else d
+
+
+def _answer_text(v) -> str:
+    if isinstance(v, str):
+        return v.strip()
+    return json.dumps(v, ensure_ascii=False, indent=2)
+
+
+def build_fact_snapshot(session, messages: list[str] | None = None) -> str:
+    """Everything a document may rely on, and nothing it may not.
+
+    Approved sessions: the approved resume is the resume; the original upload is
+    never included. Legacy sessions (no approved resume): the upload with emails,
+    phone numbers and URLs removed, plus the candidate's own chat answers
+    (`messages`, in order) so later corrections win.
+    """
     data = session.discovery_data or {}
-    out = discovery_md or ""
-    contact = data.get("contact")
+    fields, omitted = _contact(session)
+    out: list[str] = ["## Confirmed contact (use exactly as given; nothing else may appear)"]
     name = data.get("candidate_name")
-    if contact or name:
-        lines = ["", "", "## Contact Details (use exactly as given)"]
-        if name:
-            lines.append(f"- Name: {name}")
-        if isinstance(contact, dict):
-            for k, v in contact.items():
-                if v:
-                    lines.append(f"- {k.replace('_', ' ').title()}: {v}")
-        elif contact:
-            lines.append(f"- {contact}")
-        out += "\n".join(lines)
-    if session.resume_text:
-        out += (
-            "\n\n## Candidate's Original Resume (reference only)\n"
-            "Use it for facts, dates, employers and contact details the interview didn't cover; "
-            "where it conflicts with the interview answers, the interview wins.\n\n"
-            f"{wrap_candidate_document(session.resume_text)}"
+    if isinstance(name, str) and name.strip():
+        out.append(f"- Name: {name}")
+    for k in CONTACT_FIELDS_LISTED:
+        if k in fields:
+            out.append(f"- {k.title()}: {fields[k]}")
+    if omitted:
+        out.append(
+            "- Not listed by the candidate (leave out entirely, do not look for them elsewhere): "
+            + ", ".join(omitted)
         )
-    return out
+    if len(out) == 1:
+        out.append("- (no contact details were confirmed; leave contact details out)")
+
+    answered, skipped, _next, _total = progress(session)
+    out.append("\n## Interview answers")
+    for qid in answered:
+        out.append(f"### {QUESTION_LABELS.get(qid, qid)}\n{_answer_text(data[qid])}")
+    extras = [k for k in data if k not in ("candidate_name", "contact", "skipped_questions")
+              and k not in answered]
+    for k in extras:
+        out.append(f"### {k.replace('_', ' ').title()} (additional detail)\n{_answer_text(data[k])}")
+    if skipped:
+        out.append("\n## Skipped questions (the candidate chose not to answer; do not invent content)")
+        out += [f"- {QUESTION_LABELS.get(q, q)}" for q in skipped]
+
+    approved = getattr(session, "approved_resume", None)
+    if approved and approved.strip():
+        out.append(
+            "\n## Approved resume (this IS the candidate's resume; the candidate approved it)\n"
+            + strip_comments(approved).strip()
+        )
+    else:
+        if messages:
+            out.append(
+                "\n## Candidate's answers, in order (later answers correct earlier ones)\n"
+                + "\n\n".join(f"- {m.strip()}" for m in messages if m and m.strip())
+            )
+        if session.resume_text:
+            out.append(
+                "\n## Candidate's original resume (reference only; contact details were removed)\n"
+                "Use it for facts, dates and employers the interview didn't cover; where it conflicts "
+                "with the interview answers, the interview wins.\n\n"
+                + wrap_candidate_document(_redact_contact(session.resume_text))
+            )
+    out.append("\n" + FACT_RULES)
+    return "\n".join(out)
+
+
+async def _user_messages(session_id) -> list[str]:
+    async with async_session() as db:
+        rows = (await db.execute(
+            select(Message.content).where(
+                Message.session_id == session_id, Message.role == "user", Message.status == "ok"
+            ).order_by(Message.created_at.asc(), Message.id.asc())
+        )).scalars().all()
+    return list(rows)
+
+
+def _snapshot_for(session, messages: list[str]) -> str:
+    return build_fact_snapshot(session, None if getattr(session, "approved_resume", None) else messages)
+
+
+def _visible_text(content: str) -> str:
+    t = re.sub(r"(?is)<(style|script)\b.*?</\1>", " ", content)
+    return re.sub(r"<[^>]+>", "\n", t)
+
+
+def _document_check(session):
+    """Return check(content) -> problem|None for generated Markdown/HTML."""
+    fields, _omitted = _contact(session)
+    emails = {fields["email"].strip().lower()} if "email" in fields else set()
+    phones = {_phone_digits(fields["phone"])} if "phone" in fields else set()
+
+    def check(content: str) -> str | None:
+        if _MARKER_RE.search(content):
+            return "internal marker"
+        text = strip_comments(content)
+        if _PLACEHOLDER_RE.search(text):
+            return "placeholder"
+        visible = _visible_text(text)
+        for m in _EMAIL_RE.findall(visible):
+            if m.lower() not in emails:
+                return "email"
+        for m in _PHONE_RE.findall(visible):
+            if _phone_digits(m) not in phones:
+                return "phone"
+        return None
+
+    return check
+
+
+def _gaps(text: str) -> list[str]:
+    out: list[str] = []
+    for g in _GAP_RE.findall(text):
+        g = " ".join(g.split())[:200]
+        if g and g not in out:
+            out.append(g)
+    return out[:10]
 
 
 async def _base_resume_text(session_id) -> str:
@@ -410,7 +594,8 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
 
     files = _load_system_files()
     await asyncio.to_thread(write_discovery_md, session)
-    discovery_md = _candidate_context(session, read_discovery_md(session) or "")
+    snapshot = _snapshot_for(session, await _user_messages(session_id))
+    check = _document_check(session)
     rules = files.get(
         "system_resume_rules_early_career" if session.experience_level == "early_career" else "system_resume_rules", ""
     )
@@ -421,8 +606,8 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
 
     stage = _staging(session_id, f"target-{posting_id}")
 
-    await _stage_text(
-        stage, "resume", ".md", "targeted resume",
+    raw_resume = await _stage_text(
+        stage, "resume_raw", ".md", "targeted resume",
         (
             f"You are a resume writer specializing in job targeting.\n\n{rules}\n\n{output_formats}\n\n"
             f"Rules for targeted variants:\n"
@@ -431,14 +616,18 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
             f"- Weave keywords naturally — the summary must read like the candidate wrote it, not keyword stuffing\n"
             f"- Extract 10-15 key terms from the posting and use exact phrases where they fit naturally\n"
             f"- Flag any keywords the resume doesn't support with a comment: <!-- GAP: [keyword] -->\n"
-            f"- {HEADER_RULE}\n"
+            f"- {HEADER_RULE}\n\n{FACT_RULES}\n"
         ),
         (
             f"Job Posting — {company} ({role}):\n\n{wrap_candidate_document(posting_text)}\n\n"
-            f"Base Resume:\n\n{base_resume if base_resume else discovery_md}\n\n"
+            f"Base Resume:\n\n{base_resume if base_resume else snapshot}\n\n"
             f"Generate the targeted resume variant. Rewrite only the Summary."
         ),
+        check=check,
     )
+    # GAP comments are for us, not the candidate: drop them from the resume, keep the list.
+    gaps = _gaps(raw_resume)
+    (stage / "resume.md").write_text(strip_comments(raw_resume).strip() + "\n", encoding="utf-8")
     await _to_docx(stage / "resume.md", stage / "resume.docx")
 
     items = [
@@ -449,20 +638,26 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
     ]
 
     if include_cover_letter:
-        await _stage_text(
+        cover = await _stage_text(
             stage, "cover", ".md", "cover letter",
-            f"You are a cover letter writer.\n\n{output_formats}\n\n{HEADER_RULE}",
+            f"You are a cover letter writer.\n\n{output_formats}\n\n{HEADER_RULE}\n\n{FACT_RULES}",
             (
                 f"Job Posting — {company} ({role}):\n\n{wrap_candidate_document(posting_text)}\n\n"
-                f"Candidate Discovery Data:\n\n{discovery_md}\n\n"
+                f"Candidate facts:\n\n{snapshot}\n\n"
                 f"Base Resume:\n\n{base_resume}\n\n"
                 f"Write a targeted cover letter for this specific role and company. "
                 f"Follow the cover letter format in the output formats guide exactly."
             ),
+            check=check,
         )
         await _to_docx(stage / "cover.md", stage / "cover.docx")
+        # The Markdown preview (only) carries the gaps list.
+        preview = strip_comments(cover).strip() + "\n"
+        if gaps:
+            preview += "\n---\n\n**Gaps to address**\n" + "\n".join(f"- {g}" for g in gaps) + "\n"
+        (stage / "cover.preview.md").write_text(preview, encoding="utf-8")
         items += [
-            dict(type="cover_letter_md", ext=".md", staged=stage / "cover.md",
+            dict(type="cover_letter_md", ext=".md", staged=stage / "cover.preview.md",
                  filename=download_name(name, "Cover_Letter", ".md", company)),
             dict(type="cover_letter_docx", ext=".docx", staged=stage / "cover.docx",
                  filename=download_name(name, "Cover_Letter", ".docx", company)),

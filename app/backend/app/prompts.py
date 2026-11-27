@@ -3,6 +3,7 @@ import os
 from functools import lru_cache
 
 from app.config import settings
+from app.interview import progress
 from app.models import Session
 
 
@@ -119,7 +120,7 @@ Examples:
 - After detecting experience level: <!--META:{"experience_level": "experienced", "phase": 2}-->
 - After capturing a discovery answer: <!--META:{"discovery_update": {"target_role": "Financial Controller"}}-->
 - After completing all discovery questions: <!--META:{"phase": 3}-->
-- After finishing the resume: <!--META:{"status": "interview_complete"}-->
+- After the candidate approves the final resume: <!--META:{"status": "interview_complete"}-->
 """
 
 
@@ -155,6 +156,8 @@ CONTACT_INSTRUCTION = (
     '<!--META:{"discovery_update": {"candidate_name": "<name>", "contact": {"location": "...", '
     '"phone": "...", "email": "...", "linkedin": "...", "other": "..."}}}--> '
     "and leave out any field the candidate doesn't want listed. Never invent a value. "
+    "If they don't want a field listed, record it in `omitted` "
+    '(e.g. "contact": {"omitted": ["phone"]}) and don\'t ask for it again. '
     "This does not count as one of the numbered discovery questions; "
     "after saving it, continue with the first discovery question.\n"
 )
@@ -216,30 +219,40 @@ def build_system_prompt(session: Session) -> str:
 
     elif session.phase == 2:
         # Discovery interview
-        total_questions = 9 if session.experience_level == "early_career" else 12
-        answered = len(
-            [k for k in (session.discovery_data or {}) if k not in CONTACT_KEYS]
-        )
-        current_q = min(answered + 1, total_questions)
+        answered_ids, skipped_ids, next_id, total_questions = progress(session)
+        done = len(answered_ids) + len(skipped_ids)
 
         parts.append("\n## Your Task: Discovery Interview (Phase 2)\n")
         if "contact" not in (session.discovery_data or {}):
             parts.append(CONTACT_INSTRUCTION)
-        resuming = answered > 0
-        if resuming:
+        if done > 0:
             parts.append(
-                f"**RESUMING SESSION** — The candidate has already answered {answered} question(s). "
-                f"Do NOT re-ask questions that are already answered (see 'Discovery Data Collected So Far'). "
+                f"**RESUMING SESSION** — The candidate has already answered or skipped {done} question(s). "
+                f"Do NOT re-ask questions that are already answered or skipped (see 'Discovery Data Collected So Far'). "
                 f"Pick up exactly where you left off.\n"
             )
-        parts.append(
-            f"**STRICT RULE — ONE QUESTION AT A TIME:**\n"
-            f"You are on question {current_q} of {total_questions}. "
-            f"Look at the 'Discovery Data Collected So Far' section to see what has already been answered. "
-            f"Find the FIRST question in the list below that does NOT yet have an answer in the collected data. "
-            f"Ask ONLY that single question. Do NOT ask multiple questions in the same message. "
-            f"Do NOT move on until the candidate has answered the current question.\n"
-        )
+        if next_id is None:
+            parts.append(
+                f"**ALL {total_questions} QUESTIONS ARE DONE.** Every question has been answered or skipped. "
+                "Do not ask another discovery question. Briefly tell the candidate you have what you need, "
+                "and move on with `<!--META:{\"phase\": 3}-->`"
+                + (" once their contact details are confirmed.\n" if "contact" not in (session.discovery_data or {}) else ".\n")
+            )
+        else:
+            current_q = done + 1
+            skip_list = json.dumps(skipped_ids + [next_id])
+            parts.append(
+                f"**STRICT RULE — ONE QUESTION AT A TIME:**\n"
+                f"You are on question {current_q} of {total_questions} (id `{next_id}`). "
+                f"Ask ONLY that single question, using the matching question in the list below. "
+                f"Do NOT ask multiple questions in the same message and do not move on until the candidate "
+                f"has answered it or chosen to skip it.\n"
+                f"Save the answer with `discovery_update: {{\"{next_id}\": ...}}`. "
+                f"If the candidate wants to skip it, save `{{\"skipped_questions\": {skip_list}}}`. "
+                f"A follow-up answer refines the same id. If the candidate corrects an earlier answer, "
+                f"update that id. Extra detail that doesn't belong to a question id may use its own short "
+                f"snake_case key, but it never counts as answering a question.\n"
+            )
         if session.experience_level == "early_career":
             discovery = files.get("system_discovery_early_career", "")
         else:
@@ -283,7 +296,14 @@ def build_system_prompt(session: Session) -> str:
             "**Step 4 — Present the polished resume to the candidate.**\n"
             "Only after completing steps 1-3, present the final resume in markdown. "
             "Briefly summarize the 2-3 strongest changes you made and why. "
-            "Ask the candidate if they want any adjustments.\n"
+            "Ask the candidate if they want any adjustments.\n\n"
+            "**Saving the resume:** wrap the complete resume you present (and only the resume, not your "
+            "commentary) in `<!--RESUME-->` and `<!--/RESUME-->`. The candidate still sees it; the app saves "
+            "it. Wrap it again, in full, every time you present a revised version. Never include a contact "
+            "detail the candidate left out: use only the contact details in the Complete Discovery Data "
+            "below (anything under `omitted` stays off), even if their uploaded resume has them.\n"
+            "When the candidate says the latest resume is final, reply with a short closing message and "
+            "set `status` to `interview_complete`; do not set it before they approve.\n"
         )
         if session.experience_level == "early_career":
             rules = files.get("system_resume_rules_early_career", "")

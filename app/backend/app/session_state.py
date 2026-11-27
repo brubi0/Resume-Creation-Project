@@ -10,7 +10,7 @@ import logging
 import math
 import re
 
-from app.interview import required_question_ids
+from app.interview import discovery_complete_for, known_question_ids
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +47,28 @@ def extract_meta(text: str) -> tuple[str, list]:
     return clean.strip(), metas
 
 
+_RESUME_RE = re.compile(r"<!--RESUME-->(.*?)<!--/RESUME-->", re.DOTALL)
+_RESUME_OPEN = "<!--RESUME-->"
+_RESUME_CLOSE = "<!--/RESUME-->"
+MAX_RESUME_BYTES = 64 * 1024
+
+
+def extract_resume(text: str) -> tuple[str, str | None]:
+    """Return (clean_text, draft). The last complete RESUME block is the draft.
+
+    Every marker is stripped from the stored text but the resume text itself stays
+    visible to the candidate. An unterminated <!--RESUME--> keeps its text and
+    produces no draft.
+    """
+    blocks = [m.group(1).strip() for m in _RESUME_RE.finditer(text)]
+    clean = _RESUME_RE.sub(lambda m: m.group(1), text)
+    clean = clean.replace(_RESUME_OPEN, "").replace(_RESUME_CLOSE, "")
+    draft = blocks[-1] if blocks else None
+    if draft is not None and (not draft or len(draft.encode("utf-8")) > MAX_RESUME_BYTES):
+        draft = None
+    return clean.strip(), draft
+
+
 def _depth(v) -> int | None:
     """Nesting depth of a JSON-ish value; None if it holds a disallowed type."""
     if isinstance(v, bool) or isinstance(v, (str, int)):
@@ -71,14 +93,7 @@ def _json_size(v) -> int:
 
 
 def discovery_complete(experience_level: str | None, discovery_data: dict | None) -> bool:
-    """Interim rule (Stage 5 replaces it): every question answered or skipped, and contact present."""
-    data = discovery_data or {}
-    skipped = data.get("skipped_questions")
-    skipped = set(skipped) if isinstance(skipped, list) else set()
-    for qid in required_question_ids(experience_level):
-        if qid not in data and qid not in skipped:
-            return False
-    return "contact" in data
+    return discovery_complete_for(experience_level, discovery_data)
 
 
 def _merge_contact(existing, update, rejected: list[str]):
@@ -123,7 +138,7 @@ def _merge_contact(existing, update, rejected: list[str]):
     return new
 
 
-def _apply_discovery(existing: dict, update, rejected: list[str]) -> dict | None:
+def _apply_discovery(existing: dict, update, rejected: list[str], level=None) -> dict | None:
     if not isinstance(update, dict):
         rejected.append("discovery_update_type")
         return None
@@ -158,8 +173,8 @@ def _apply_discovery(existing: dict, update, rejected: list[str]) -> dict | None
                 continue
             data[key] = value
         elif key == "skipped_questions":
-            # Stage 5 tightens this to known question ids.
-            if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+            known = known_question_ids(level)
+            if not isinstance(value, list) or not all(isinstance(x, str) and x in known for x in value):
                 rejected.append("skipped_questions")
                 continue
             data[key] = list(dict.fromkeys(value))
@@ -171,7 +186,9 @@ def _apply_discovery(existing: dict, update, rejected: list[str]) -> dict | None
     return data
 
 
-def validate_updates(session, metas: list, *, available_profiles) -> tuple[dict, list[str]]:
+def validate_updates(
+    session, metas: list, *, available_profiles, resume_draft: str | None = None
+) -> tuple[dict, list[str]]:
     """Return (accepted session-field updates, rejected reason keys)."""
     rejected: list[str] = []
     merged: dict = {}
@@ -214,7 +231,7 @@ def validate_updates(session, metas: list, *, available_profiles) -> tuple[dict,
 
     data = session.discovery_data or {}
     if "discovery_update" in merged:
-        new_data = _apply_discovery(data, merged["discovery_update"], rejected)
+        new_data = _apply_discovery(data, merged["discovery_update"], rejected, level)
         if new_data is not None and new_data != data:
             accepted["discovery_data"] = new_data
             data = new_data
@@ -240,12 +257,19 @@ def validate_updates(session, metas: list, *, available_profiles) -> tuple[dict,
             accepted["phase"] = v
             phase = v
 
+    # The draft extracted from this reply counts only while the interview is in phase 3.
+    draft = getattr(session, "resume_draft", None)
+    if resume_draft and phase == 3 and resume_draft != draft:
+        accepted["resume_draft"] = resume_draft
+        draft = resume_draft
+
     if "status" in merged:
         v = merged["status"]
-        if v == "interview_complete" and phase == 3:
-            # Stage 5: also require a resume_draft and copy it to approved_resume.
+        if v == "interview_complete" and phase == 3 and draft and draft.strip():
             if session.status != "interview_complete":
                 accepted["status"] = v
+            if draft != getattr(session, "approved_resume", None):
+                accepted["approved_resume"] = draft
         else:
             rejected.append("status")
 
