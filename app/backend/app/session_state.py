@@ -268,10 +268,14 @@ def validate_updates(
     if "status" in merged:
         v = merged["status"]
         if v == "interview_complete" and phase == 3 and draft and draft.strip():
-            if session.status != "interview_complete":
-                accepted["status"] = v
-            if draft != getattr(session, "approved_resume", None):
-                accepted["approved_resume"] = draft
+            if session.status not in ("active", "interview_complete"):
+                # e.g. documents were generated while this reply was in flight
+                rejected.append("status")
+            else:
+                if session.status != "interview_complete":
+                    accepted["status"] = v
+                if draft != getattr(session, "approved_resume", None):
+                    accepted["approved_resume"] = draft
         else:
             rejected.append("status")
 

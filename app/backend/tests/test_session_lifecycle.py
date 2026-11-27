@@ -328,3 +328,40 @@ async def test_late_reply_after_takeover_does_not_clobber_newer_turn(client, fak
     assert [(m["role"], m["content"], m["status"]) for m in msgs if m["role"] == "user"] == [
         ("user", "slow answer", "failed"), ("user", "newer answer", "ok")]
     assert sum(1 for m in msgs if m["role"] == "assistant") == 1
+
+
+async def test_late_reply_after_documents_generated_keeps_status_and_resume(
+    client, admin_headers, fake_claude
+):
+    from app.deliverables import wait_for_generation_tasks
+
+    c = await make_candidate(client, "Dana Hvac")
+    async with async_session() as db:
+        row = Session(user_id=c["id"], phase=3, status="interview_complete",
+                      approved_resume="# OLD APPROVED", resume_draft="# OLD APPROVED",
+                      discovery_data={"candidate_name": "Dana Hvac"})
+        db.add(row)
+        await db.commit()
+        sid = row.id
+    gate = threading.Event()
+    fake_claude.started.clear()
+    late = ('Here is the final version.\n<!--RESUME-->\n# NEW DRAFT\n<!--/RESUME-->\n'
+            '<!--META:{"status": "interview_complete"}-->')
+    fake_claude.script(("wait", gate, late))
+    task = asyncio.create_task(_send(client, c, "looks good", sid=str(sid), cmid=str(uuid.uuid4())))
+    assert await asyncio.to_thread(fake_claude.started.wait, 10)
+    fake_claude.script("# Resume", "# Prep", "<html>m</html>", "# Score")
+    r = await client.post(f"/api/deliverables/generate?session_id={sid}", headers=admin_headers)
+    assert r.status_code == 202
+    await wait_for_generation_tasks()
+    gate.set()
+    reply = await asyncio.wait_for(task, 15)
+    assert reply.status_code == 200
+    async with async_session() as db:
+        row = await db.get(Session, sid)
+        assert row.status == "deliverables_generated"
+        assert row.approved_resume == "# OLD APPROVED"
+        assert row.resume_draft == "# OLD APPROVED"
+        assert row.turn_state == "idle"
+    msgs = await _messages(client, c)
+    assert [m["status"] for m in msgs] == ["ok", "ok"]

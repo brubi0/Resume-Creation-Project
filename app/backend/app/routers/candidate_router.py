@@ -311,9 +311,14 @@ async def send_message(
     # RESUME block: strip the markers from what is stored (the text stays), and offer
     # the draft to the validator, which only takes it in phase 3.
     clean_text, resume_draft = extract_resume(clean_text)
-    accepted, _rejected = validate_updates(
-        session, metas, available_profiles=get_available_profiles(), resume_draft=resume_draft
-    )
+    if session.status in ("active", "interview_complete"):
+        accepted, _rejected = validate_updates(
+            session, metas, available_profiles=get_available_profiles(), resume_draft=resume_draft
+        )
+    else:
+        # e.g. documents were generated while the reply was in flight: keep the
+        # reply, apply nothing from it.
+        accepted = {}
     assistant_msg = Message(
         session_id=sid,
         role="assistant",
