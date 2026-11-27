@@ -159,7 +159,6 @@ async def test_concurrent_new_session_creates_exactly_one(client):
     assert sorted(rows) == ["abandoned", "active"]
 
 
-@pytest.mark.xfail(strict=True, reason="HTML previews are returned with no sandbox CSP (frontend half is Stage 6)")
 async def test_html_preview_has_sandbox_csp(client, deliverables_dir):
     c = await make_candidate(client, "Ivy Teaching")
     sid = await _make_session(c["id"])
@@ -179,7 +178,6 @@ async def test_html_preview_has_sandbox_csp(client, deliverables_dir):
     assert "sandbox" in r.headers.get("content-security-policy", "")
 
 
-@pytest.mark.xfail(strict=True, reason="resume upload has no size limit; a ~6 MB body is accepted into memory (plan says 50 MB; 6 MB proves the same)")
 async def test_oversized_upload_rejected(client):
     c = await make_candidate(client, "Jon Logistics")
     payload = b"experience line\n" * (6 * 1024 * 1024 // 16)  # ~6 MB, in memory

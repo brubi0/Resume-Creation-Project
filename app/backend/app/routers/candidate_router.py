@@ -1,3 +1,4 @@
+import asyncio
 import io
 
 import logging
@@ -414,6 +415,95 @@ async def select_profile(
     return session
 
 
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+MAX_PDF_PAGES = 30
+MAX_TEXT_CHARS = 50_000
+MAX_DOCX_ENTRIES = 200
+MAX_DOCX_TOTAL = 30 * 1024 * 1024
+MAX_DOCX_ENTRY = 20 * 1024 * 1024
+PARSE_TIMEOUT = 20
+
+
+class UploadRejected(Exception):
+    def __init__(self, status: int, message: str):
+        self.status = status
+        self.message = message
+
+
+_NO_TEXT = (
+    "We couldn't find any text in this file. It may be a scanned image. "
+    "Upload a text-based PDF or a Word file, or skip the upload."
+)
+_BAD_CONTENT = "That file doesn't look like a {kind}. Upload a PDF, DOCX, or TXT file."
+
+
+def _extract_pdf(content: bytes) -> str:
+    from pypdf import PdfReader
+
+    if not content.startswith(b"%PDF-"):
+        raise UploadRejected(415, _BAD_CONTENT.format(kind="PDF"))
+    try:
+        reader = PdfReader(io.BytesIO(content))
+        if reader.is_encrypted:
+            raise UploadRejected(
+                422,
+                "This PDF is password-protected. Remove the password or upload a DOCX.",
+            )
+        if len(reader.pages) > MAX_PDF_PAGES:
+            raise UploadRejected(
+                422, f"That PDF has more than {MAX_PDF_PAGES} pages. Upload a shorter resume."
+            )
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
+    except UploadRejected:
+        raise
+    except Exception:
+        raise UploadRejected(422, "We couldn't read that PDF. Try a DOCX or skip the upload.")
+
+
+def _extract_docx(content: bytes) -> str:
+    import zipfile
+
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(content))
+    except zipfile.BadZipFile:
+        raise UploadRejected(415, _BAD_CONTENT.format(kind="Word document"))
+    with zf:
+        infos = zf.infolist()
+        if "word/document.xml" not in {i.filename for i in infos}:
+            raise UploadRejected(415, _BAD_CONTENT.format(kind="Word document"))
+        if (
+            len(infos) > MAX_DOCX_ENTRIES
+            or sum(i.file_size for i in infos) > MAX_DOCX_TOTAL
+            or any(i.file_size > MAX_DOCX_ENTRY for i in infos)
+        ):
+            raise UploadRejected(422, "That Word file is too large or complex to read.")
+    try:
+        import docx
+
+        doc = docx.Document(io.BytesIO(content))
+        parts = [p.text for p in doc.paragraphs]
+        for table in doc.tables:
+            for row in table.rows:
+                seen = set()
+                for cell in row.cells:
+                    if id(cell._tc) in seen:
+                        continue
+                    seen.add(id(cell._tc))
+                    parts.append(cell.text)
+        return "\n".join(parts)
+    except Exception:
+        raise UploadRejected(422, "We couldn't read that Word file. Try a PDF or skip the upload.")
+
+
+def _extract_txt(content: bytes) -> str:
+    if b"\x00" in content:
+        raise UploadRejected(415, _BAD_CONTENT.format(kind="text file"))
+    try:
+        return content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise UploadRejected(415, _BAD_CONTENT.format(kind="text file"))
+
+
 @router.post("/resume", response_model=SessionResponse)
 async def upload_resume(
     file: UploadFile = File(...),
@@ -421,39 +511,44 @@ async def upload_resume(
     user: User = Depends(require_candidate),
 ):
     """Accept a resume file (PDF, DOCX, or TXT) and store extracted text on the session."""
-    content = await file.read()
+    chunks: list[bytes] = []
+    size = 0
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        size += len(chunk)
+        if size > MAX_UPLOAD_BYTES:
+            return _json(413, "file_too_large", "That file is larger than 5 MB.")
+        chunks.append(chunk)
+    content = b"".join(chunks)
     filename = (file.filename or "").lower()
 
     if filename.endswith(".pdf"):
-        try:
-            from pypdf import PdfReader
-
-            reader = PdfReader(io.BytesIO(content))
-            text = "\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"Could not parse PDF: {exc}")
+        extractor = _extract_pdf
     elif filename.endswith(".docx"):
-        try:
-            import docx
-
-            doc = docx.Document(io.BytesIO(content))
-            text = "\n".join(p.text for p in doc.paragraphs)
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"Could not parse DOCX: {exc}")
-    elif filename.endswith(".txt") or file.content_type in ("text/plain", "application/octet-stream"):
-        try:
-            text = content.decode("utf-8", errors="replace")
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail=f"Could not decode file: {exc}")
+        extractor = _extract_docx
+    elif filename.endswith(".txt") or (
+        "." not in filename and file.content_type in ("text/plain", "application/octet-stream")
+    ):
+        extractor = _extract_txt
     else:
-        raise HTTPException(
-            status_code=415,
-            detail="Unsupported file type. Upload a PDF, DOCX, or TXT file.",
-        )
+        return _json(415, "unsupported_type", "Unsupported file type. Upload a PDF, DOCX, or TXT file.")
+
+    try:
+        text = await asyncio.wait_for(asyncio.to_thread(extractor, content), PARSE_TIMEOUT)
+    except UploadRejected as rej:
+        return _json(rej.status, "upload_rejected", rej.message)
+    except asyncio.TimeoutError:
+        return _json(422, "upload_timeout", "That file took too long to read. Try a simpler file or skip the upload.")
+    except Exception:
+        return _json(422, "upload_unreadable", "We couldn't read that file. Try another format or skip the upload.")
 
     text = text.strip()
     if not text:
-        raise HTTPException(status_code=422, detail="No text could be extracted from the file.")
+        return _json(422, "no_text", _NO_TEXT)
+    if len(text) > MAX_TEXT_CHARS:
+        return _json(422, "text_too_long", "That resume has too much text (over 50,000 characters). Upload a shorter version.")
 
     session = await get_or_create_session(user, db)
     session.resume_text = text

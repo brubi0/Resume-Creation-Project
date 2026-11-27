@@ -114,8 +114,9 @@ async def _guarded(session_id: uuid.UUID, work) -> None:
         msg = "The AI service was unavailable. Try again in a few minutes."
     except ClaudeConfigError:
         msg = "The AI service is not configured correctly. Contact support."
-    except Exception:
-        log.exception("generation failed session=%s", session_id)
+    except Exception as exc:
+        # type only: tracebacks/messages can quote candidate text
+        log.error("generation failed session=%s: %s", session_id, type(exc).__name__)
         msg = "Document generation failed unexpectedly. Try again."
     try:
         async with async_session() as db:
@@ -125,8 +126,8 @@ async def _guarded(session_id: uuid.UUID, work) -> None:
                 .values(generation_status="failed", generation_error=msg[:500])
             )
             await db.commit()
-    except Exception:
-        log.exception("could not record generation failure session=%s", session_id)
+    except Exception as exc:
+        log.error("could not record generation failure session=%s: %s", session_id, type(exc).__name__)
 
 
 # ------------------------------------------------------------------ primitives

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # --- Auth ---
@@ -31,7 +31,7 @@ class UserResponse(BaseModel):
 
 
 class CandidateCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=120)
     password: str
 
 
@@ -54,7 +54,7 @@ class CandidateListItem(BaseModel):
 
 
 class MessageSend(BaseModel):
-    content: str
+    content: str = Field(max_length=8000)
     session_id: uuid.UUID | None = None
     client_message_id: uuid.UUID | None = None
 
@@ -76,7 +76,7 @@ class MessageResponse(BaseModel):
 
 
 class JobDescriptionUpdate(BaseModel):
-    job_description: str
+    job_description: str = Field(max_length=20000)
 
 
 class SessionResponse(BaseModel):
@@ -130,9 +130,9 @@ class DeliverableWithContext(BaseModel):
 
 class TargetRequest(BaseModel):
     session_id: uuid.UUID
-    company: str
-    role: str
-    posting_text: str
+    company: str = Field(max_length=200)
+    role: str = Field(max_length=200)
+    posting_text: str = Field(max_length=20000)
     include_cover_letter: bool = False
 
 

@@ -46,6 +46,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
           placeholder="Type your answer"
           disabled={disabled}
           rows={1}
+          maxLength={8000}
           className="flex-1 resize-none rounded-lg border border-rule bg-sheet px-3 py-2.5 text-[15px] placeholder:text-slate/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
         />
         <button

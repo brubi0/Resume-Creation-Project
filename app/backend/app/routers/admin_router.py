@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -20,7 +21,7 @@ from app.config import settings
 from app.database import get_db
 from app.models import Session, User
 from app.prompts import get_profile_metadata, reload_system_files
-from app.storage import resolve_inside
+from app.storage import resolve_inside, session_dir
 from app.schemas import CandidateCreate, CandidateListItem, ProfileGenerateRequest, ProfileItem
 
 
@@ -124,8 +125,16 @@ async def delete_candidate(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Candidate not found")
+    session_ids = (
+        await db.execute(select(Session.id).where(Session.user_id == user.id))
+    ).scalars().all()
     await db.delete(user)
     await db.commit()
+    for sid in session_ids:
+        try:
+            shutil.rmtree(session_dir(sid), ignore_errors=True)
+        except Exception:
+            pass
     return {"detail": "Candidate deleted"}
 
 

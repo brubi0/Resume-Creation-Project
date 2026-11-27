@@ -33,7 +33,7 @@ export default function ChatMessage({
         <div className="ml-8 sm:ml-16">
           <div className="rounded-lg border border-l-[3px] border-rule border-l-ink bg-sheet px-4 py-3 font-sans text-[15px] leading-relaxed">
             <div className="md">
-              <ReactMarkdown>{content}</ReactMarkdown>
+              <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{content}</ReactMarkdown>
             </div>
           </div>
           {isUser && status === "failed" ? (
@@ -58,7 +58,7 @@ export default function ChatMessage({
         <div>
           <div className="font-serif text-[17px] leading-relaxed text-ink">
             <div className={`md md-voice${isNew ? " is-new" : ""}`}>
-              <ReactMarkdown>{content}</ReactMarkdown>
+              <ReactMarkdown components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}>{content}</ReactMarkdown>
             </div>
           </div>
           <p className="mt-1.5 text-xs text-slate">{time}</p>

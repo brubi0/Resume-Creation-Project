@@ -2,7 +2,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -110,7 +110,10 @@ async def download_deliverable(
     return FileResponse(
         path,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": content_disposition(deliverable.filename)},
+        headers={
+            "Content-Disposition": content_disposition(deliverable.filename),
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
@@ -148,7 +151,13 @@ async def preview_deliverable(
         content = f.read()
 
     content_type = "text/html" if ext == ".html" else "text/markdown"
-    return {"content": content, "content_type": content_type, "filename": deliverable.filename}
+    return JSONResponse(
+        {"content": content, "content_type": content_type, "filename": deliverable.filename},
+        headers={
+            "Content-Security-Policy": "sandbox",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/generate", status_code=202)
