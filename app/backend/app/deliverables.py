@@ -33,7 +33,7 @@ from app.config import settings
 from app.database import async_session
 from app.discovery_writer import write_discovery_md
 from app.interview import QUESTION_LABELS, progress
-from app.models import Deliverable, Message, Posting, Session
+from app.models import BASE_TYPES, Deliverable, Message, Posting, Session
 from app.prompts import _load_system_files, wrap_candidate_document
 from app.storage import (
     download_name,
@@ -249,13 +249,15 @@ async def _commit_set(session_id, items, *, kind, posting_id, replace_base, mark
             if replace_base:
                 old = (await db.execute(
                     select(Deliverable.file_path).where(
-                        Deliverable.session_id == session_id, Deliverable.kind == "base"
+                        Deliverable.session_id == session_id, Deliverable.kind == "base",
+                        Deliverable.type.in_(BASE_TYPES),
                     )
                 )).scalars().all()
                 old_paths = list(old)
                 await db.execute(
                     delete(Deliverable).where(
-                        Deliverable.session_id == session_id, Deliverable.kind == "base"
+                        Deliverable.session_id == session_id, Deliverable.kind == "base",
+                        Deliverable.type.in_(BASE_TYPES),
                     )
                 )
             db.add_all(rows)

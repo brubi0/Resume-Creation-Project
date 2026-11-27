@@ -20,16 +20,9 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import engine
 from app.interview import discovery_complete_for
+from app.models import LEGACY_TYPES, REQUIRED_BASE_TYPES
 
 KNOWN_STATUSES = ("active", "interview_complete", "deliverables_generated", "abandoned")
-REQUIRED_BASE_TYPES = ("resume_md", "resume_docx", "interview_prep_md",
-                       "skills_matrix_html", "score_card_md")
-LEGACY_TYPES = {
-    "resume": "resume_docx",
-    "interview_prep": "interview_prep_md",
-    "skills_matrix": "skills_matrix_html",
-    "score_card": "score_card_md",
-}
 # resume_md has no legacy twin: legacy sessions only ever had the DOCX resume, so a
 # legacy `resume` row satisfies both resume_md and resume_docx.
 LEGACY_SATISFIES = {"resume": ("resume_md", "resume_docx")}

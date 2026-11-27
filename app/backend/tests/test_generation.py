@@ -301,6 +301,25 @@ async def test_legacy_rows_replaced_on_generate(client, admin_headers, fake_clau
     assert not os.path.exists(legacy)
 
 
+async def test_regeneration_keeps_legacy_targeted_rows_with_default_kind(
+    client, admin_headers, fake_claude, deliverables_dir
+):
+    """A pre-migration targeted row carries the column default kind='base'; it must survive."""
+    c, sid = await _session(client, "Una Hvac")
+    sdir = os.path.join(deliverables_dir, str(sid))
+    os.makedirs(sdir, exist_ok=True)
+    tgt = os.path.join(sdir, "Una_Hvac_Resume_Acme_Tech.docx")
+    open(tgt, "w").write("targeted")
+    await _row_with_path(sid, tgt, "resume_targeted_docx", "Una_Hvac_Resume_Acme_Tech.docx")
+    async with async_session() as db:  # default kind is 'base'
+        assert (await db.execute(select(Deliverable.kind).where(Deliverable.session_id == sid))).scalar_one() == "base"
+    _script_base(fake_claude, "Una Hvac")
+    await _generate(client, admin_headers, sid)
+    types = sorted(r.type for r in await _rows(sid))
+    assert "resume_targeted_docx" in types and len(types) == 6
+    assert os.path.exists(tgt)
+
+
 async def test_simultaneous_generate_one_202_one_409(client, admin_headers, fake_claude):
     c, sid = await _session(client, "Vic HVAC")
     fake_claude.script(("sleep", 1, "# Vic resume"), "# prep", "<html>m</html>", "# score")

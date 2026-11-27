@@ -34,6 +34,12 @@ def upgrade() -> None:
         "fk_deliverables_posting_id", "deliverables", "postings",
         ["posting_id"], ["id"], ondelete="SET NULL",
     )
+    # Rows created before this migration default to 'base'; targeted documents were
+    # never base documents, so classify them (regeneration must not delete them).
+    op.execute(
+        "UPDATE deliverables SET kind='targeted' WHERE type IN "
+        "('resume_targeted_md','resume_targeted_docx','cover_letter_md','cover_letter_docx')"
+    )
 
 
 def downgrade() -> None:

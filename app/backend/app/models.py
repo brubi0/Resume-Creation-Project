@@ -10,6 +10,20 @@ class Base(DeclarativeBase):
     pass
 
 
+# Deliverable types, defined once. Base sets (modern + legacy names) are replaced
+# together on regeneration; targeted types are never touched by it.
+REQUIRED_BASE_TYPES = ("resume_md", "resume_docx", "interview_prep_md",
+                       "skills_matrix_html", "score_card_md")
+LEGACY_TYPES = {
+    "resume": "resume_docx",
+    "interview_prep": "interview_prep_md",
+    "skills_matrix": "skills_matrix_html",
+    "score_card": "score_card_md",
+}
+BASE_TYPES = frozenset(REQUIRED_BASE_TYPES) | frozenset(LEGACY_TYPES)
+TARGETED_TYPES = ("resume_targeted_md", "resume_targeted_docx", "cover_letter_md", "cover_letter_docx")
+
+
 class User(Base):
     __tablename__ = "users"
 
