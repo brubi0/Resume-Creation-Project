@@ -130,13 +130,18 @@ async function chatRetry(browser, vp) {
 }
 
 async function chatInProgress(browser, vp) {
+  // The send gets 409 (another request holds the turn); the turn stays pending for two polls.
+  let sent = false;
   let polls = 0;
   const reply = msg(5, "assistant", "Thanks for waiting. Here is the next question about your team.");
   const { ctx, page } = await open(browser, vp, CANDIDATE, "/chat", chatHandlers({
-    "POST /chat/send": (_r, route) => json(route, 409, { code: "turn_in_progress", detail: "busy", message: "busy" }),
+    "POST /chat/send": (_r, route) => {
+      sent = true;
+      return json(route, 409, { code: "turn_in_progress", detail: "busy", message: "busy" });
+    },
     "GET /chat/session": (_r, route) => {
-      polls += 1;
-      return json(route, 200, { ...SESSION, turn_state: polls <= 2 ? "pending" : "idle" });
+      if (sent) polls += 1;
+      return json(route, 200, { ...SESSION, turn_state: sent && polls <= 2 ? "pending" : "idle" });
     },
     "GET /chat/messages": (_r, route) =>
       json(route, 200, polls >= 3 ? [...BASE_MESSAGES, msg(6, "user", "Six technicians."), reply] : BASE_MESSAGES),
@@ -147,7 +152,50 @@ async function chatInProgress(browser, vp) {
   await shot(page, vp, "chat-in-progress");
   check(`[${vp.name}] in-progress notice shown while the turn is pending`, true);
   await page.getByText("Thanks for waiting. Here is the next question").waitFor({ timeout: 20000 });
-  check(`[${vp.name}] reply appears once the turn is idle`, (await page.getByText("Still working on your last message").count()) === 0);
+  let cleared = true;
+  try {
+    // cleared right after the reply (one /chat/status round trip), not a poll interval later
+    await page.getByText("Still working on your last message").waitFor({ state: "detached", timeout: 1500 });
+  } catch { cleared = false; }
+  check(`[${vp.name}] reply appears once the turn is idle and the notice clears`, cleared);
+  await ctx.close();
+}
+
+async function chatCommitBetweenReads(browser, vp) {
+  // Codex P2: the reply commits between the messages read and the session read. A messages
+  // read that arrives before the session read reports idle sees the pre-commit thread.
+  let sent = false;
+  let polls = 0;
+  let committed = false;
+  const reply = msg(8, "assistant", "Thanks. Which software did your team rely on most?");
+  const { ctx, page } = await open(browser, vp, CANDIDATE, "/chat", chatHandlers({
+    "POST /chat/send": (_r, route) => {
+      sent = true;
+      return json(route, 409, { code: "turn_in_progress", detail: "busy", message: "busy" });
+    },
+    "GET /chat/session": async (_r, route) => {
+      if (!sent) return json(route, 200, SESSION);
+      polls += 1;
+      if (polls === 1) return json(route, 200, { ...SESSION, turn_state: "pending" });
+      await new Promise((r) => setTimeout(r, 300)); // the reply commits during this read
+      committed = true;
+      return json(route, 200, { ...SESSION, turn_state: "idle" });
+    },
+    "GET /chat/messages": (_r, route) => {
+      if (!sent) return json(route, 200, BASE_MESSAGES);
+      const user = msg(6, "user", "Seven technicians.");
+      return json(route, 200, committed ? [...BASE_MESSAGES, user, reply]
+                                        : [...BASE_MESSAGES, { ...user, status: "pending" }]);
+    },
+  }));
+  await page.getByPlaceholder("Type your answer").fill("Seven technicians.");
+  await page.keyboard.press("Enter");
+  await page.getByText("Still working on your last message").waitFor({ timeout: 8000 });
+  let shown = true;
+  try {
+    await page.getByText("Which software did your team rely on most?").waitFor({ timeout: 15000 });
+  } catch { shown = false; }
+  check(`[${vp.name}] a reply committed between the two reads still appears`, shown);
   await ctx.close();
 }
 
@@ -378,7 +426,7 @@ const main = async () => {
   const browser = await chromium.launch();
   try {
     for (const vp of VIEWPORTS) {
-      for (const fn of [loginFlow, chatRetry, chatInProgress, chatNewMessage409, chatReplaced, adminStates, adminTargetStartRefreshes, documents]) {
+      for (const fn of (process.env.ONLY ? [eval(process.env.ONLY)] : [loginFlow, chatRetry, chatInProgress, chatCommitBetweenReads, chatNewMessage409, chatReplaced, adminStates, adminTargetStartRefreshes, documents])) {
         try {
           await fn(browser, vp);
         } catch (e) {

@@ -32,6 +32,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
   - The omitted-contact check missed Markdown autolinks, `mailto:`/`tel:` links and HTML-entity emails.
   - (Re-review) A run still working past the stale window could, after a retry, overwrite the retry's documents or status. Each run is now fenced by its claim token (checked under a row lock before publishing or recording failure) and works in its own staging directory; reusable text is copied in from earlier attempts.
   - (Third pass) A candidate deleted while their interview notes were being written could leave the notes file on disk. The write now holds a shared lock on the session row, so the delete's cleanup always runs after it.
+  - (Fourth pass) Chat polling read messages and turn state in parallel, so a reply committed between the two reads could stay hidden until reload. The page now reads the session first, then messages (on load and when polling), and a poll already in flight is discarded once polling restarts.
 - **Low:**
   - Skipped questions replaced earlier skips.
   - Retry after a failed tailoring run reran the full base set.
@@ -51,7 +52,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 | Authorization matrix | Candidate gets 403 on every `/api/admin/*` and generate/target route; no token gets 401; A cannot see B's chat, session or documents; admin access works |
 | Upload | Valid PDF, DOCX and TXT; 6 MB; mislabelled files; DOCX decompression limits; encrypted, blank and 40-page PDFs; DOCX with an external relationship (no network); prompt-injection TXT stored as data only |
 | Frontend | `npm run build` OK |
-| Playwright mocked (390×844 and 1280×800) | **58/58**: chat failed, in flight, in progress, replaced and recovered; admin generating and failed; documents; Markdown preview with a long name (no horizontal overflow); HTML sandbox (script, onerror and `javascript:` never run, token unread) |
+| Playwright mocked (390×844 and 1280×800) | **60/60**: chat failed, in flight, in progress, replaced and recovered; admin generating and failed; documents; Markdown preview with a long name (no horizontal overflow); HTML sandbox (script, onerror and `javascript:` never run, token unread) |
 | Playwright journey (real backend plus fake provider) | **16/16**: login → skip upload → profile → contact → 12 questions → approve → admin generate → DOCX download (valid, candidate name, Word heading styles) |
 | Documents | Synthetic sets for two candidates (HVAC manager with a 41-character name; marketing graduate) through real pandoc and the template; selectable text, heading styles, no placeholders |
 | `git diff --check` | Clean |
@@ -59,7 +60,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 **Not run:**
 - Paid live-model tests. They need your approval and should use synthetic candidates.
 - The production diagnostics run. It is read-only but needs your approval.
-- Codex review: PR #8 clean; PR #9 raised 5 P2s over three passes, all fixed above.
+- Codex review: PR #8 clean; PR #9 raised 6 P2s over four passes, all fixed above.
 
 ## 3. Security and privacy review
 

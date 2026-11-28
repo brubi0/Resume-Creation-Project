@@ -62,8 +62,11 @@ export default function CandidateChat() {
   const [waiting, setWaiting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const pollTimer = useRef<number | null>(null);
+  // Bumped whenever polling stops or restarts, so a poll already in flight can tell it is stale.
+  const pollGen = useRef(0);
 
   const stopPolling = useCallback(() => {
+    pollGen.current += 1;
     if (pollTimer.current !== null) {
       window.clearTimeout(pollTimer.current);
       pollTimer.current = null;
@@ -83,13 +86,15 @@ export default function CandidateChat() {
       }
       setWaiting(true);
       setNotice("Still working on your last message…");
+      const gen = pollGen.current;
       pollTimer.current = window.setTimeout(async () => {
         pollTimer.current = null;
         try {
-          const [m, s] = await Promise.all([
-            api.get("/chat/messages"),
-            api.get("/chat/session"),
-          ]);
+          // Session first, then messages: once the session reads idle, a messages read
+          // that starts after it is guaranteed to include the committed reply.
+          const s = await api.get("/chat/session");
+          const m = await api.get("/chat/messages");
+          if (gen !== pollGen.current) return; // superseded by a newer poll
           const list: Message[] = m.data;
           const serverIds = new Set(list.map((x) => x.client_message_id).filter(Boolean));
           // Keep messages the server never stored (marked failed, Try again) at the end.
@@ -105,13 +110,14 @@ export default function CandidateChat() {
             return;
           }
           const statusRes = await api.get("/chat/status");
+          if (gen !== pollGen.current) return;
           setStatus(statusRes.data);
           const last = list[list.length - 1];
           if (last && last.role === "assistant") setNewMsgId(last.id);
           setWaiting(false);
           setNotice(null);
         } catch {
-          schedulePoll(attempt + 1);
+          if (gen === pollGen.current) schedulePoll(attempt + 1);
         }
       }, POLL_MS);
     },
@@ -128,10 +134,9 @@ export default function CandidateChat() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [sessionRes, messagesRes] = await Promise.all([
-          api.get("/chat/session"),
-          api.get("/chat/messages"),
-        ]);
+        // Sequential for the same reason as the poll: the thread is never older than the turn state.
+        const sessionRes = await api.get("/chat/session");
+        const messagesRes = await api.get("/chat/messages");
         setStatus({
           phase: sessionRes.data.phase,
           experience_level: sessionRes.data.experience_level,
