@@ -50,10 +50,23 @@ CANDIDATE_PW = "candidate-pw-1"
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def _schema():
-    """Fresh schema for the whole test session."""
+    """Fresh schema for the whole test session, built by the real migrations (as in
+    production), not create_all: type drift between models and migrations shows up here."""
+    import subprocess
+    import sys
+
+    from sqlalchemy import text as sql
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(sql("DROP SCHEMA public CASCADE"))
+        await conn.execute(sql("CREATE SCHEMA public"))
+    await engine.dispose()
+    proc = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=os.path.dirname(os.path.dirname(__file__)),
+        capture_output=True, text=True, timeout=120,
+    )
+    assert proc.returncode == 0, proc.stderr
     yield
 
 

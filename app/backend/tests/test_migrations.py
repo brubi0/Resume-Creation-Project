@@ -70,7 +70,6 @@ async def test_alembic_upgrade_head_has_all_tables_and_columns():
     assert structural == []
 
 
-@pytest.mark.xfail(strict=True, reason="known drift: created_at/updated_at are timestamptz in migrations but naive DateTime in models; ix_postings_session_id exists only in the migration")
 async def test_alembic_upgrade_head_matches_models_exactly():
     assert await _migrated_diff() == []
 

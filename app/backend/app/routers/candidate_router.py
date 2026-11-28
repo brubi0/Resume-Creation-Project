@@ -266,7 +266,7 @@ async def send_message(
     if user_msg is not None:
         # failed (or stale pending) retry: reuse the row, no duplicate message
         user_msg.status = "pending"
-        user_msg.created_at = datetime.utcnow()
+        user_msg.created_at = datetime.now(timezone.utc)
         user_msg.phase = session.phase
     else:
         user_msg = Message(

@@ -34,6 +34,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
   - (Third pass) A candidate deleted while their interview notes were being written could leave the notes file on disk. The write now holds a shared lock on the session row, so the delete's cleanup always runs after it.
   - (Fourth pass) Chat polling read messages and turn state in parallel, so a reply committed between the two reads could stay hidden until reload. The page now reads the session first, then messages (on load and when polling), and a poll already in flight is discarded once polling restarts.
   - (Fifth pass) Interviews already under way at deploy time predate question ids and RESUME markers, so the new rules would strand them (stuck in phase 2, or approval rejected for lack of a captured draft). Migration 0007 now marks existing sessions `legacy_flow`; those may advance and finish the old way (the resume is then written from the interview). New sessions keep the strict rules.
+  - (Sixth pass) Retrying an already-answered message failed on the migrated (production) schema: models mapped timestamps as naive while migrations created `timestamptz`, so the idempotency lookup raised instead of returning the saved reply. Models now match the migrations exactly (aware UTC timestamps, `ix_postings_session_id`), and the test suite builds its schema with `alembic upgrade head` instead of `create_all`, so drift fails tests.
 - **Low:**
   - Skipped questions replaced earlier skips.
   - Retry after a failed tailoring run reran the full base set.
@@ -45,8 +46,8 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 
 | Gate | Result |
 |---|---|
-| Backend (`app/backend/run-tests.sh`, real Postgres, mocked Claude) | **204 passed, 1 xfailed** (known migration/model timestamp drift, below) |
-| Baseline before the work | 5 passed, 7 strict xfails describing the bugs; 6 of those xfails now pass as regular tests |
+| Backend (`app/backend/run-tests.sh`, real Postgres, mocked Claude) | **205 passed** (schema built by the real migrations) |
+| Baseline before the work | 5 passed, 7 strict xfails describing the bugs; all 7 now pass as regular tests |
 | PostgreSQL concurrency | Parallel first visits = 1 session; 10 concurrent new-session calls = 1 new session; new-session racing first visit; simultaneous sends (one wins, the other 409, nothing lost or duplicated); the same message twice = 1 model call; new interview while a reply is in flight; stale takeover; late reply after generation; other candidates never blocked |
 | Mocked provider | Success, timeout, connection error, 429, 500/529, 401/403/404, refusal, max_tokens, empty text, malformed META; a 3 s slow reply leaves `/api/health` at 0.001 s and another candidate's messages at 0.009 s |
 | Candidate journeys (10 spec scenarios) | All pass: with and without upload, early career, career changer, new industry profile, omitted phone/email, correction, refresh mid-interview, 503 then retry, new interview after completion |
@@ -61,7 +62,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 **Not run:**
 - Paid live-model tests. They need your approval and should use synthetic candidates.
 - The production diagnostics run. It is read-only but needs your approval.
-- Codex review: PR #8 clean; PR #9 raised 7 P2s over five passes, all fixed above.
+- Codex review: PR #8 clean; PR #9 raised 8 P2s over six passes, all fixed above.
 
 ## 3. Security and privacy review
 
@@ -99,7 +100,7 @@ cd ~/resume-chat/app && docker compose exec -T backend python -m app.diagnostics
 ## 6. Outstanding risks and limitations
 
 1. **Migrations 0006 and 0007 run automatically on container start** (`alembic upgrade head` in the Dockerfile CMD). Deploying the branch migrates production: additive columns plus a backfill. Take a DB backup first.
-2. Known pre-existing drift: migrations use `timestamptz` and the models use naive `DateTime`, and `ix_postings_session_id` exists only in the migration (strict xfail). Production is fine because it is built from migrations. Stacks built by `create_all` (the e2e stack) show reply times offset by the server timezone. Worth a follow-up migration.
+2. ~~Known model/migration drift~~ resolved: models now match the migrations exactly and the suite runs on the migrated schema.
 3. The host nginx `proxy_read_timeout` is 120 s, but a chat reply can take longer (300 s timeout, SDK retries). The UI degrades gracefully (Not sent → Try again → "Still working…" → reply appears). Raising it to 300 s removes the hiccup.
 4. Early-career resumes run 2 pages at about 550 words with the current Word template spacing; the rules target one page. The template or word budget needs a decision.
 5. Escape doesn't close the preview modal once focus is inside the sandboxed iframe (the Close button works).
@@ -118,6 +119,6 @@ Hardens the candidate journey end to end.
 - **Chat:** chat turns are serialized and idempotent and survive provider failures (answers are kept, Try again). The model's state updates are validated, never applied blindly.
 - **Interview and facts:** the interview tracks real question ids, accepts skips and omitted contact fields, and the candidate-approved resume becomes the final resume.
 - **Privacy:** model-written HTML now renders in a sandboxed iframe (closes a stored-XSS path to the admin token).
-- **Tests and tooling:** adds a Postgres-backed test suite (204 tests), Playwright mocked and journey runs, synthetic document checks, and read-only diagnostics.
+- **Tests and tooling:** adds a Postgres-backed test suite (205 tests), Playwright mocked and journey runs, synthetic document checks, and read-only diagnostics.
 
 Migrations 0006 and 0007 are additive and run on deploy.

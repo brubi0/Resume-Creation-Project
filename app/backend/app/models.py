@@ -1,10 +1,15 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+
+
+def _now() -> datetime:
+    """Aware UTC: the migrated columns are timestamptz."""
+    return datetime.now(timezone.utc)
 
 class Base(DeclarativeBase):
     pass
@@ -35,11 +40,12 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(nullable=False, default="candidate")
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        DateTime(timezone=True),
+        default=_now,
+        onupdate=_now,
     )
 
     sessions: Mapped[list["Session"]] = relationship(
@@ -96,11 +102,12 @@ class Session(Base):
         Boolean, nullable=False, default=False, server_default=text("false")
     )
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        DateTime(timezone=True),
+        default=_now,
+        onupdate=_now,
     )
 
     user: Mapped["User"] = relationship(back_populates="sessions")
@@ -145,7 +152,7 @@ class Message(Base):
         UUID(as_uuid=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
 
     session: Mapped["Session"] = relationship(back_populates="messages")
@@ -158,7 +165,7 @@ class Posting(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     company: Mapped[str] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(nullable=False)
@@ -166,8 +173,9 @@ class Posting(Base):
     include_cover_letter: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    # Migration 0004 created this one column as naive TIMESTAMP (UTC); match it exactly.
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(), default=lambda: _now().replace(tzinfo=None)
     )
 
     session: Mapped["Session"] = relationship(
@@ -194,7 +202,7 @@ class Deliverable(Base):
         String(20), nullable=False, default="base", server_default="base"
     )
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
 
     session: Mapped["Session"] = relationship(back_populates="deliverables")
