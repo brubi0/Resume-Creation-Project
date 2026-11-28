@@ -19,6 +19,7 @@ from app.claude_client import (
 )
 from app.config import settings
 from app.database import get_db
+from app.deliverables import expire_stale_generations
 from app.models import Session, User
 from app.prompts import get_profile_metadata, reload_system_files
 from app.storage import resolve_inside, session_dir
@@ -38,6 +39,7 @@ def slugify(name: str) -> str:
 async def list_candidates(
     db: AsyncSession = Depends(get_db), _admin: User = Depends(require_admin)
 ):
+    await expire_stale_generations(db)
     result = await db.execute(
         select(User)
         .where(User.role == "candidate")

@@ -207,6 +207,7 @@ export default function AdminDashboard() {
           candidateName={targetingCandidate.name}
           onDone={() => {
             setTargetingCandidate(null);
+            loadCandidates();
             setProfileBanner(`Tailored resume started for ${targetingCandidate.name}. It will appear under Documents shortly.`);
           }}
           onClose={() => setTargetingCandidate(null)}

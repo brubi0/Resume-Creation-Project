@@ -355,6 +355,28 @@ async def test_stale_running_claim_can_be_retaken(client, admin_headers, fake_cl
     assert (await _sess(sid)).generation_status == "done"
 
 
+async def test_interrupted_run_becomes_failed_in_admin_list(client, admin_headers, fake_claude):
+    """A run orphaned by a restart surfaces as failed (Try again) once the claim is stale."""
+    c, sid = await _session(client, "Ivy Interrupted")
+    async with async_session() as db:
+        await db.execute(update(Session).where(Session.id == sid).values(
+            generation_status="running",
+            generation_started_at=datetime.now(timezone.utc) - timedelta(minutes=5)))
+        await db.commit()
+    lst = (await client.get("/api/admin/candidates", headers=admin_headers)).json()
+    assert next(x for x in lst if x["id"] == str(c["id"]))["generation_status"] == "running"
+    async with async_session() as db:
+        await db.execute(update(Session).where(Session.id == sid).values(
+            generation_started_at=datetime.now(timezone.utc) - timedelta(minutes=31)))
+        await db.commit()
+    lst = (await client.get("/api/admin/candidates", headers=admin_headers)).json()
+    mine = next(x for x in lst if x["id"] == str(c["id"]))
+    assert mine["generation_status"] == "failed" and "interrupted" in mine["generation_error"]
+    _script_base(fake_claude, "Ivy Interrupted")
+    await _generate(client, admin_headers, sid)
+    assert (await _sess(sid)).generation_status == "done"
+
+
 async def test_failed_status_visible_in_admin_list(client, admin_headers, fake_claude):
     c, sid = await _session(client, "Xan Software")
     fake_claude.script("")

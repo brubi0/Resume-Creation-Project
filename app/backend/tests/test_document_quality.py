@@ -111,6 +111,22 @@ def test_fixtures_pass_the_real_generation_check(level, doc):
     assert check(_text(level, doc) + "\nother.person@elsewhere.test\n") == "email"
 
 
+@pytest.mark.parametrize("hidden,kind", [
+    ("<other.person@elsewhere.test>", "email"),
+    ('<a href="mailto:other.person@elsewhere.test">Email me</a>', "email"),
+    ('<a href="mailto:other.person%40elsewhere.test">Email me</a>', "email"),
+    ("other.person&#64;elsewhere.test", "email"),
+    ('<a href="tel:+15125550199">Call</a>', "phone"),
+])
+def test_check_sees_contact_details_inside_links(hidden, kind):
+    """Autolinks and mailto:/tel: targets render as contact links, so the check must see them."""
+    session = types.SimpleNamespace(discovery_data={"contact": CANDIDATES["experienced"]["contact"]})
+    check = _document_check(session)
+    base = _text("experienced", "resume")
+    assert check(base) is None
+    assert check(base + "\n" + hidden + "\n") == kind
+
+
 @pytest.mark.parametrize("level", list(CANDIDATES))
 def test_skills_matrix_html_is_inert_and_complete(level):
     html = _text(level, "skills_matrix")

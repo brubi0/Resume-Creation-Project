@@ -8,12 +8,14 @@ sessions.generation_status='failed' with a short, safe message.
 
 import asyncio
 import hashlib
+import html
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+import urllib.parse
 import uuid
 from pathlib import Path
 
@@ -135,6 +137,25 @@ async def _guarded(session_id: uuid.UUID, work) -> None:
             await db.commit()
     except Exception as exc:
         log.error("could not record generation failure session=%s: %s", session_id, type(exc).__name__)
+
+
+INTERRUPTED_MSG = "Document generation was interrupted (the server restarted). Try again."
+
+
+async def expire_stale_generations(db) -> None:
+    """Mark runs older than the stale-claim window as failed so the admin sees Try again.
+
+    Generation runs in-process; a restart leaves 'running' with no task behind it.
+    """
+    await db.execute(
+        text(
+            "UPDATE sessions SET generation_status='failed', generation_error=:msg "
+            "WHERE generation_status='running' AND (generation_started_at IS NULL "
+            f"OR generation_started_at < now() - interval '{STALE_CLAIM_MINUTES} minutes')"
+        ),
+        {"msg": INTERRUPTED_MSG},
+    )
+    await db.commit()
 
 
 # ------------------------------------------------------------------ primitives
@@ -553,7 +574,15 @@ def _snapshot_for(session, messages: list[str]) -> str:
 
 def _visible_text(content: str) -> str:
     t = re.sub(r"(?is)<(style|script)\b.*?</\1>", " ", content)
-    return re.sub(r"<[^>]+>", "\n", t)
+    return html.unescape(re.sub(r"<[^>]+>", "\n", t))
+
+
+def _link_text(content: str) -> str:
+    """Contact details hidden inside tags: Markdown autolinks and mailto:/tel: targets."""
+    t = re.sub(r"(?is)<(style|script)\b.*?</\1>", " ", content)
+    parts = re.findall(r"<([^<>\s]+@[^<>\s]+)>", t)
+    parts += re.findall(r"(?i)(?:mailto|tel):([^\"'\s>)]+)", t)
+    return html.unescape(urllib.parse.unquote("\n".join(parts)))
 
 
 def _document_check(session):
@@ -568,7 +597,7 @@ def _document_check(session):
         text = strip_comments(content)
         if _PLACEHOLDER_RE.search(text):
             return "placeholder"
-        visible = _visible_text(text)
+        visible = _visible_text(text) + "\n" + _link_text(text)
         for m in _EMAIL_RE.findall(visible):
             if m.lower() not in emails:
                 return "email"

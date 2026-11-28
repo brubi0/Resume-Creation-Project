@@ -26,6 +26,10 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
   - A turn left pending by a restart never offered Try again.
   - A message that got 409 while another turn was busy vanished from the thread.
   - A late reply after a stale-turn takeover clobbered the newer turn.
+- **Codex review of PR #9 (P2, fixed):**
+  - A run orphaned by a restart stayed `running` with no Try again. Runs past the 30-minute window now show as failed in the admin list.
+  - Starting a tailored resume didn't refresh the list, so its failure never showed.
+  - The omitted-contact check missed Markdown autolinks, `mailto:`/`tel:` links and HTML-entity emails.
 - **Low:**
   - Skipped questions replaced earlier skips.
   - Retry after a failed tailoring run reran the full base set.
@@ -37,7 +41,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 
 | Gate | Result |
 |---|---|
-| Backend (`app/backend/run-tests.sh`, real Postgres, mocked Claude) | **193 passed, 1 xfailed** (known migration/model timestamp drift, below) |
+| Backend (`app/backend/run-tests.sh`, real Postgres, mocked Claude) | **199 passed, 1 xfailed** (known migration/model timestamp drift, below) |
 | Baseline before the work | 5 passed, 7 strict xfails describing the bugs; 6 of those xfails now pass as regular tests |
 | PostgreSQL concurrency | Parallel first visits = 1 session; 10 concurrent new-session calls = 1 new session; new-session racing first visit; simultaneous sends (one wins, the other 409, nothing lost or duplicated); the same message twice = 1 model call; new interview while a reply is in flight; stale takeover; late reply after generation; other candidates never blocked |
 | Mocked provider | Success, timeout, connection error, 429, 500/529, 401/403/404, refusal, max_tokens, empty text, malformed META; a 3 s slow reply leaves `/api/health` at 0.001 s and another candidate's messages at 0.009 s |
@@ -45,7 +49,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 | Authorization matrix | Candidate gets 403 on every `/api/admin/*` and generate/target route; no token gets 401; A cannot see B's chat, session or documents; admin access works |
 | Upload | Valid PDF, DOCX and TXT; 6 MB; mislabelled files; DOCX decompression limits; encrypted, blank and 40-page PDFs; DOCX with an external relationship (no network); prompt-injection TXT stored as data only |
 | Frontend | `npm run build` OK |
-| Playwright mocked (390×844 and 1280×800) | **56/56**: chat failed, in flight, in progress, replaced and recovered; admin generating and failed; documents; Markdown preview with a long name (no horizontal overflow); HTML sandbox (script, onerror and `javascript:` never run, token unread) |
+| Playwright mocked (390×844 and 1280×800) | **58/58**: chat failed, in flight, in progress, replaced and recovered; admin generating and failed; documents; Markdown preview with a long name (no horizontal overflow); HTML sandbox (script, onerror and `javascript:` never run, token unread) |
 | Playwright journey (real backend plus fake provider) | **16/16**: login → skip upload → profile → contact → 12 questions → approve → admin generate → DOCX download (valid, candidate name, Word heading styles) |
 | Documents | Synthetic sets for two candidates (HVAC manager with a 41-character name; marketing graduate) through real pandoc and the template; selectable text, heading styles, no placeholders |
 | `git diff --check` | Clean |
@@ -53,7 +57,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 **Not run:**
 - Paid live-model tests. They need your approval and should use synthetic candidates.
 - The production diagnostics run. It is read-only but needs your approval.
-- Codex review. It needs a push.
+- Codex review: PR #8 clean; PR #9 raised 3 P2s, all fixed above.
 
 ## 3. Security and privacy review
 
@@ -96,7 +100,7 @@ cd ~/resume-chat/app && docker compose exec -T backend python -m app.diagnostics
 4. Early-career resumes run 2 pages at about 550 words with the current Word template spacing; the rules target one page. The template or word budget needs a decision.
 5. Escape doesn't close the preview modal once focus is inside the sandboxed iframe (the Close button works).
 6. Behaviour of the real model under the new prompts (question ids, RESUME markers, `omitted`) is verified only with a scripted fake. One paid synthetic run per track is recommended before release.
-7. Generation runs in-process: a restart mid-run leaves `running` until the 30-minute stale rule allows a retry.
+7. Generation runs in-process: a restart mid-run shows `running` for up to 30 minutes, then the admin list marks it failed with Try again.
 
 ## 7. Suggested PR
 
@@ -110,6 +114,6 @@ Hardens the candidate journey end to end.
 - **Chat:** chat turns are serialized and idempotent and survive provider failures (answers are kept, Try again). The model's state updates are validated, never applied blindly.
 - **Interview and facts:** the interview tracks real question ids, accepts skips and omitted contact fields, and the candidate-approved resume becomes the final resume.
 - **Privacy:** model-written HTML now renders in a sandboxed iframe (closes a stored-XSS path to the admin token).
-- **Tests and tooling:** adds a Postgres-backed test suite (193 tests), Playwright mocked and journey runs, synthetic document checks, and read-only diagnostics.
+- **Tests and tooling:** adds a Postgres-backed test suite (199 tests), Playwright mocked and journey runs, synthetic document checks, and read-only diagnostics.
 
 Migrations 0006 and 0007 are additive and run on deploy.

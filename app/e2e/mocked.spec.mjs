@@ -252,6 +252,33 @@ async function adminStates(browser, vp) {
   await ctx.close();
 }
 
+async function adminTargetStartRefreshes(browser, vp) {
+  // Nothing running before targeting starts: the list must reload so polling picks the run up.
+  let loads = 0;
+  let targeted = false;
+  const idle = () => adminCandidates().map((c) => (c.generation_status === "running" || c.generation_status === "failed")
+    ? { ...c, generation_status: "idle", generation_error: null } : c);
+  const { ctx, page } = await open(browser, vp, ADMIN, "/admin", {
+    "POST /deliverables/target": (_r, route) => { targeted = true; return json(route, 202, { generation_status: "running" }); },
+    "GET /admin/candidates": (_r, route) => {
+      loads += 1;
+      const list = idle();
+      if (targeted) list[3] = { ...list[3], generation_status: "running", generation_kind: "targeted" };
+      return json(route, 200, list);
+    },
+  });
+  await page.locator("button:visible", { hasText: "Tailor to a job" }).first().waitFor({ timeout: 8000 });
+  const before = loads;
+  await page.locator("button:visible", { hasText: "Tailor to a job" }).last().click();
+  await page.getByPlaceholder("Acme Corp").fill("Gulf Air Systems");
+  await page.getByPlaceholder("NetSuite Administrator").fill("Service Manager");
+  await page.getByPlaceholder("Paste the full job posting here").fill("Service Manager at Gulf Air Systems. Lead HVAC technicians.");
+  await page.getByRole("button", { name: "Generate tailored resume" }).click();
+  await page.locator("p[role=status]:visible", { hasText: "Generating documents…" }).waitFor({ timeout: 8000 });
+  check(`[${vp.name}] starting a tailored resume reloads the list and shows it generating`, targeted && loads > before);
+  await ctx.close();
+}
+
 const DELIVERABLES = [
   ["resume_md", "Maximiliano_Alejandro_Fernandez-Oyelaran_Resume_FINAL.md"],
   ["resume_docx", "Maximiliano_Alejandro_Fernandez-Oyelaran_Resume_FINAL.docx"],
@@ -351,7 +378,7 @@ const main = async () => {
   const browser = await chromium.launch();
   try {
     for (const vp of VIEWPORTS) {
-      for (const fn of [loginFlow, chatRetry, chatInProgress, chatNewMessage409, chatReplaced, adminStates, documents]) {
+      for (const fn of [loginFlow, chatRetry, chatInProgress, chatNewMessage409, chatReplaced, adminStates, adminTargetStartRefreshes, documents]) {
         try {
           await fn(browser, vp);
         } catch (e) {
