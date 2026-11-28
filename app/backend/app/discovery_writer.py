@@ -14,8 +14,8 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-from app.config import settings
 from app.models import Session
+from app.storage import session_dir as _session_dir
 
 
 # Map discovery_data keys to human-readable labels
@@ -51,7 +51,7 @@ def _label(key: str) -> str:
 
 
 def session_dir(session: Session) -> str:
-    return os.path.join(settings.DELIVERABLES_DIR, str(session.id))
+    return str(_session_dir(session.id))
 
 
 def discovery_md_path(session: Session) -> str:
@@ -111,6 +111,31 @@ def write_discovery_md(session: Session) -> None:
     path = discovery_md_path(session)
     with open(path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
+
+
+async def write_discovery_md_if_session_exists(session: Session) -> bool:
+    """Write discovery.md only while the session row still exists (never recreates the
+    directory of a session deleted mid-request). Returns whether it wrote.
+
+    The row is held FOR SHARE during the write: a concurrent candidate delete (which
+    deletes the row, then removes the directory) waits until the file is written, so
+    its cleanup always runs after this write, never before it.
+    """
+    import asyncio
+
+    from sqlalchemy import select
+
+    from app.database import async_session
+
+    async with async_session() as db:
+        found = (await db.execute(
+            select(Session.id).where(Session.id == session.id).with_for_update(read=True)
+        )).first()
+        if found is None:
+            return False
+        await asyncio.to_thread(write_discovery_md, session)
+        await db.commit()
+    return True
 
 
 def read_discovery_md(session: Session) -> str | None:

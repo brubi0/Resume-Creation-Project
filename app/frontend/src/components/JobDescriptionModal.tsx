@@ -31,6 +31,7 @@ export default function JobDescriptionModal({
           value={jd}
           onChange={(e) => setJd(e.target.value)}
           placeholder="Paste the full job posting here"
+          maxLength={20000}
           className="h-64 w-full resize-none rounded-lg border border-rule bg-sheet p-3 text-[15px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         />
 

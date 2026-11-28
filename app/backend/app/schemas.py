@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # --- Auth ---
@@ -31,7 +31,7 @@ class UserResponse(BaseModel):
 
 
 class CandidateCreate(BaseModel):
-    name: str
+    name: str = Field(max_length=120)
     password: str
 
 
@@ -44,6 +44,10 @@ class CandidateListItem(BaseModel):
     session_status: str | None = None
     session_phase: int | None = None
     completed_sets: int = 0
+    generation_status: str = "idle"
+    generation_error: str | None = None
+    generation_kind: str | None = None
+    generation_posting_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -52,7 +56,13 @@ class CandidateListItem(BaseModel):
 
 
 class MessageSend(BaseModel):
-    content: str
+    content: str = Field(max_length=8000)
+    session_id: uuid.UUID | None = None
+    client_message_id: uuid.UUID | None = None
+
+
+class NewSessionRequest(BaseModel):
+    replaces_session_id: uuid.UUID | None = None
 
 
 class MessageResponse(BaseModel):
@@ -60,13 +70,15 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     phase: int
+    status: str = "ok"
+    client_message_id: uuid.UUID | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
 class JobDescriptionUpdate(BaseModel):
-    job_description: str
+    job_description: str = Field(max_length=20000)
 
 
 class SessionResponse(BaseModel):
@@ -77,6 +89,8 @@ class SessionResponse(BaseModel):
     job_description: str | None
     resume_text: str | None
     status: str
+    version: int = 0
+    turn_state: str = "idle"
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -118,9 +132,9 @@ class DeliverableWithContext(BaseModel):
 
 class TargetRequest(BaseModel):
     session_id: uuid.UUID
-    company: str
-    role: str
-    posting_text: str
+    company: str = Field(max_length=200)
+    role: str = Field(max_length=200)
+    posting_text: str = Field(max_length=20000)
     include_cover_letter: bool = False
 
 

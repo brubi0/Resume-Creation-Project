@@ -1,13 +1,32 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, Index, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+
+def _now() -> datetime:
+    """Aware UTC: the migrated columns are timestamptz."""
+    return datetime.now(timezone.utc)
+
 class Base(DeclarativeBase):
     pass
+
+
+# Deliverable types, defined once. Base sets (modern + legacy names) are replaced
+# together on regeneration; targeted types are never touched by it.
+REQUIRED_BASE_TYPES = ("resume_md", "resume_docx", "interview_prep_md",
+                       "skills_matrix_html", "score_card_md")
+LEGACY_TYPES = {
+    "resume": "resume_docx",
+    "interview_prep": "interview_prep_md",
+    "skills_matrix": "skills_matrix_html",
+    "score_card": "score_card_md",
+}
+BASE_TYPES = frozenset(REQUIRED_BASE_TYPES) | frozenset(LEGACY_TYPES)
+TARGETED_TYPES = ("resume_targeted_md", "resume_targeted_docx", "cover_letter_md", "cover_letter_docx")
 
 
 class User(Base):
@@ -21,11 +40,12 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(nullable=False, default="candidate")
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        DateTime(timezone=True),
+        default=_now,
+        onupdate=_now,
     )
 
     sessions: Mapped[list["Session"]] = relationship(
@@ -51,12 +71,43 @@ class Session(Base):
         JSONB, server_default=text("'{}'::jsonb")
     )
     status: Mapped[str] = mapped_column(default="active")
+    generation_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="idle", server_default="idle"
+    )
+    generation_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generation_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    generation_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    generation_posting_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("postings.id", ondelete="SET NULL", use_alter=True,
+                   name="fk_sessions_generation_posting_id"),
+        nullable=True,
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    turn_state: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="idle", server_default="idle"
+    )
+    turn_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    resume_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_resume: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Sessions that existed before the question-id / RESUME-marker flow (set by migration
+    # 0007). They may finish without question ids or a captured draft; the final resume is
+    # then written from the interview, as before.
+    legacy_flow: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
     updated_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
+        DateTime(timezone=True),
+        default=_now,
+        onupdate=_now,
     )
 
     user: Mapped["User"] = relationship(back_populates="sessions")
@@ -67,7 +118,8 @@ class Session(Base):
         back_populates="session", cascade="all, delete-orphan"
     )
     postings: Mapped[list["Posting"]] = relationship(
-        back_populates="session", cascade="all, delete-orphan"
+        back_populates="session", cascade="all, delete-orphan",
+        foreign_keys="Posting.session_id",
     )
 
 
@@ -75,6 +127,13 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         Index("ix_messages_session_created", "session_id", "created_at"),
+        Index(
+            "uq_messages_session_client_message",
+            "session_id",
+            "client_message_id",
+            unique=True,
+            postgresql_where=text("client_message_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -86,8 +145,14 @@ class Message(Base):
     role: Mapped[str] = mapped_column(nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     phase: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ok", server_default="ok"
+    )
+    client_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
 
     session: Mapped["Session"] = relationship(back_populates="messages")
@@ -100,16 +165,22 @@ class Posting(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False
+        ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     company: Mapped[str] = mapped_column(nullable=False)
     role: Mapped[str] = mapped_column(nullable=False)
     posting_text: Mapped[str] = mapped_column(Text, nullable=False)
+    include_cover_letter: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    # Migration 0004 created this one column as naive TIMESTAMP (UTC); match it exactly.
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(), default=lambda: _now().replace(tzinfo=None)
     )
 
-    session: Mapped["Session"] = relationship(back_populates="postings")
+    session: Mapped["Session"] = relationship(
+        back_populates="postings", foreign_keys=[session_id]
+    )
 
 
 class Deliverable(Base):
@@ -124,8 +195,14 @@ class Deliverable(Base):
     type: Mapped[str] = mapped_column(nullable=False)
     filename: Mapped[str] = mapped_column(nullable=False)
     file_path: Mapped[str] = mapped_column(nullable=False)
+    posting_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("postings.id", ondelete="SET NULL"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="base", server_default="base"
+    )
     created_at: Mapped[datetime] = mapped_column(
-        default=lambda: datetime.utcnow()
+        DateTime(timezone=True), default=_now
     )
 
     session: Mapped["Session"] = relationship(back_populates="deliverables")

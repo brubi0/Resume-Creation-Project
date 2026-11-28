@@ -1,0 +1,79 @@
+# Isolated test stack. Always run as project `resumetest` (see backend/run-tests.sh).
+name: resumetest
+
+services:
+  testdb:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: resume_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d resume_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  tests:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    working_dir: /app
+    # RUN_CMD (optional) replaces pytest, e.g. RUN_CMD="python -m tests.render_samples /out"
+    command: ["sh", "-c", "if [ -n \"$${RUN_CMD}\" ]; then eval \"$${RUN_CMD}\"; else pytest -q $${PYTEST_ARGS}; fi"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://test:test@testdb:5432/resume_test
+      ANTHROPIC_API_KEY: test-key
+      ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      JWT_SECRET: test-secret
+      ADMIN_PASSWORD: test-admin-pw
+      SYSTEM_DIR: /data/system
+      PROFILES_DIR: /data/profiles
+      TEMPLATES_DIR: /data/templates
+      DELIVERABLES_DIR: /tmp/deliverables
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTEST_ARGS: ${PYTEST_ARGS:-}
+      RUN_CMD: ${RUN_CMD:-}
+    volumes:
+      - ./backend:/app:ro
+      - ./backend/tests/_out:/out
+      - ../system:/data/system:ro
+      - ../profiles:/data/profiles:ro
+      - ../templates:/data/templates:ro
+    depends_on:
+      testdb:
+        condition: service_healthy
+
+  # End-to-end API for the browser journey (profile `e2e`; not started by run-tests.sh).
+  # See e2e/run-journey.sh. The provider is a scripted fake; the real API is never called.
+  api:
+    profiles: ["e2e"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    working_dir: /app
+    command: ["python", "-m", "tests.serve_fake"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://test:test@testdb:5432/resume_test
+      ANTHROPIC_API_KEY: test-key
+      ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      JWT_SECRET: test-secret
+      ADMIN_PASSWORD: test-admin-pw
+      SYSTEM_DIR: /data/system
+      PROFILES_DIR: /data/profiles
+      TEMPLATES_DIR: /data/templates
+      DELIVERABLES_DIR: /tmp/deliverables
+      PYTHONDONTWRITEBYTECODE: "1"
+      PORT: "8000"
+    ports:
+      - "127.0.0.1:${E2E_API_PORT:-18765}:8000"
+    volumes:
+      - ./backend:/app:ro
+      - ../system:/data/system:ro
+      - ../profiles:/data/profiles:ro
+      - ../templates:/data/templates:ro
+    depends_on:
+      testdb:
+        condition: service_healthy

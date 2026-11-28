@@ -12,6 +12,7 @@ interface Props {
 const TYPE_LABELS: Record<string, string> = {
   resume: "Resume",
   resume_md: "Resume",
+  resume_docx: "Resume",
   resume_targeted_md: "Tailored resume",
   resume_targeted_docx: "Tailored resume",
   interview_prep: "Interview prep",

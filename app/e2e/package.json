@@ -1,0 +1,14 @@
+{
+  "name": "resume-chat-e2e",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Browser checks for Resume Chat (not part of the frontend image). Plain node scripts with assertions.",
+  "scripts": {
+    "mocked": "node mocked.spec.mjs",
+    "journey": "bash run-journey.sh"
+  },
+  "dependencies": {
+    "playwright": "1.47.2"
+  }
+}

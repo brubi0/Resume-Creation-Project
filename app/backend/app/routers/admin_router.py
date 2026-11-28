@@ -1,21 +1,30 @@
 import os
 import re
+import shutil
 
-import anthropic
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.auth import hash_password, require_admin
-from app.claude_client import ClaudeRefusal, create_message, response_text
+from app.claude_client import (
+    ClaudeConfigError,
+    ClaudeEmpty,
+    ClaudeRefusal,
+    ClaudeTruncated,
+    ClaudeUnavailable,
+    create_message,
+    response_text,
+)
 from app.config import settings
 from app.database import get_db
+from app.deliverables import expire_stale_generations
 from app.models import Session, User
 from app.prompts import get_profile_metadata, reload_system_files
+from app.storage import resolve_inside, session_dir
 from app.schemas import CandidateCreate, CandidateListItem, ProfileGenerateRequest, ProfileItem
 
-_claude = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
 router = APIRouter()
 
@@ -30,6 +39,7 @@ def slugify(name: str) -> str:
 async def list_candidates(
     db: AsyncSession = Depends(get_db), _admin: User = Depends(require_admin)
 ):
+    await expire_stale_generations(db)
     result = await db.execute(
         select(User)
         .where(User.role == "candidate")
@@ -56,6 +66,7 @@ async def list_candidates(
                 c.sessions,
                 key=lambda s: (STATUS_PRIORITY.get(s.status, 99), -s.created_at.timestamp()),
             )
+        gen = next((s for s in c.sessions if s.generation_status == "running"), best)
         items.append(
             CandidateListItem(
                 id=c.id,
@@ -66,6 +77,10 @@ async def list_candidates(
                 session_status=best.status if best else None,
                 session_phase=best.phase if best else None,
                 completed_sets=completed_sets,
+                generation_status=gen.generation_status if gen else "idle",
+                generation_error=gen.generation_error if gen else None,
+                generation_kind=gen.generation_kind if gen else None,
+                generation_posting_id=gen.generation_posting_id if gen else None,
             )
         )
     return items
@@ -114,8 +129,16 @@ async def delete_candidate(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="Candidate not found")
+    session_ids = (
+        await db.execute(select(Session.id).where(Session.user_id == user.id))
+    ).scalars().all()
     await db.delete(user)
     await db.commit()
+    for sid in session_ids:
+        try:
+            shutil.rmtree(session_dir(sid), ignore_errors=True)
+        except Exception:
+            pass
     return {"detail": "Candidate deleted"}
 
 
@@ -130,6 +153,16 @@ async def generate_profile(
     _admin: User = Depends(require_admin),
 ):
     """Generate a new role profile using Claude + web search, save it to disk."""
+    slug = re.sub(r"[^a-z0-9]+", "_", body.role_name.lower()).strip("_")[:60].strip("_")
+    if not re.fullmatch(r"[a-z0-9_]{1,60}", slug):
+        raise HTTPException(status_code=422, detail="Role name must contain letters or numbers.")
+    try:
+        profile_path = resolve_inside(settings.PROFILES_DIR, f"{slug}.md")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid role name.")
+    if os.path.exists(profile_path):
+        raise HTTPException(status_code=409, detail="A profile with this name already exists.")
+
     guide_path = os.path.join(settings.SYSTEM_DIR, "profile-generation-guide.md")
     example_path = os.path.join(settings.PROFILES_DIR, "netsuite_administrator.md")
 
@@ -170,37 +203,47 @@ async def generate_profile(
             # Not streamed: the pinned SDK's stream accumulator drops server_tool_use
             # inputs, and a pause_turn must be sent back unchanged. 16000 stays under
             # the SDK's non-streaming limit.
-            response = create_message(
-                _claude,
+            response = await create_message(
                 effort="high",
                 max_tokens=16000,
                 system=system_prompt,
                 tools=[{"type": "web_search_20260209", "name": "web_search"}],
                 messages=messages,
             )
-            text = response_text(response)
+            if response.stop_reason == "pause_turn":
+                # Server-side web search paused mid-turn: send the turn back to resume it.
+                messages.append({"role": "assistant", "content": response.content})
+                continue
+            profile_text = response_text(response)
         except ClaudeRefusal:
             raise HTTPException(status_code=422, detail="Claude declined to generate this profile.")
-
-        if response.stop_reason == "pause_turn":
-            # Server-side web search paused mid-turn: send the turn back to resume it.
-            messages.append({"role": "assistant", "content": response.content})
-            continue
-        profile_text = text
+        except (ClaudeTruncated, ClaudeEmpty):
+            raise HTTPException(
+                status_code=422,
+                detail="Claude's reply was incomplete. Try again.",
+            )
+        except ClaudeUnavailable:
+            raise HTTPException(
+                status_code=503, detail="The AI service is unavailable right now. Try again shortly."
+            )
+        except ClaudeConfigError:
+            raise HTTPException(
+                status_code=503, detail="The AI service is not configured correctly."
+            )
         break
 
     # Strip anything before the profile header
     marker = "# Profile:"
     idx = profile_text.find(marker)
     if idx == -1:
-        raise HTTPException(status_code=500, detail="Claude did not return a valid profile.")
+        raise HTTPException(status_code=422, detail="Claude did not return a valid profile. Try again.")
     profile_text = profile_text[idx:].strip()
 
-    # Derive slug from role_name
-    slug = re.sub(r"[^a-z0-9]+", "_", body.role_name.lower()).strip("_")
-    profile_path = os.path.join(settings.PROFILES_DIR, f"{slug}.md")
-    with open(profile_path, "w", encoding="utf-8") as f:
-        f.write(profile_text)
+    try:
+        with open(profile_path, "x", encoding="utf-8") as f:
+            f.write(profile_text)
+    except FileExistsError:
+        raise HTTPException(status_code=409, detail="A profile with this name already exists.")
 
     # Reload cache so new profile appears immediately
     reload_system_files()

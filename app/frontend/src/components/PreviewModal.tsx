@@ -50,10 +50,17 @@ export default function PreviewModal({
         <div className="flex-1 overflow-y-auto rounded-b-xl bg-paper px-3 py-6 sm:px-6">
           <div className="mx-auto max-w-[72ch] rounded-md border border-rule bg-sheet px-5 py-8 font-serif sm:px-10 sm:py-10">
             {contentType === "text/html" ? (
-              <div dangerouslySetInnerHTML={{ __html: content }} />
+              <iframe
+                sandbox=""
+                srcDoc={content}
+                title={`${friendlyTitle(filename)} preview`}
+                className="block h-[70vh] min-h-[70vh] w-full border-0 bg-white"
+              />
             ) : (
               <div className="md">
-                <ReactMarkdown>{content}</ReactMarkdown>
+                <ReactMarkdown
+                  components={{ a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}
+                >{content}</ReactMarkdown>
               </div>
             )}
           </div>

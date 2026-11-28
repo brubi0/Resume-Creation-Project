@@ -15,3 +15,7 @@ app/backend/app/__pycache__/
 app/backend/app/routers/__pycache__/
 app/frontend/node_modules/
 app/frontend/dist/
+app/backend/tests/_out/
+app/e2e/node_modules/
+app/e2e/screenshots/
+app/frontend/tsconfig.tsbuildinfo

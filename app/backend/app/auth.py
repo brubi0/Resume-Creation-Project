@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models import User
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)  # missing credentials -> 401, not FastAPI's 403
 
 
 def hash_password(password: str) -> str:
@@ -31,9 +31,11 @@ def create_token(user_id: uuid.UUID, role: str) -> str:
 
 
 async def get_current_user(
-    creds: HTTPAuthorizationCredentials = Depends(security),
+    creds: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    if creds is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     try:
         payload = jwt.decode(
             creds.credentials, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]

@@ -1,61 +1,41 @@
-import anthropic
-
-from app.claude_client import create_message, response_text
-from app.config import settings
-from app.models import Message, Session
-from app.prompts import build_system_prompt, extract_meta, parse_session_updates
-
-client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+from app.claude_client import ClaudeEmpty, create_message, response_text
+from app.session_state import extract_meta
 
 # Thinking is always on and counts toward max_tokens; replies are short, so this
 # leaves ample headroom.
 MAX_TOKENS = 16000
 
 
-async def chat_with_claude(
-    session: Session, messages: list[Message]
-) -> tuple[str, dict]:
-    """Send conversation to Claude and return (response_text, session_updates).
+class EmptyReply(ClaudeEmpty):
+    """The model answered with nothing the candidate could see."""
 
-    Builds the system prompt from the current session phase, sends the full
-    conversation history, and parses any META blocks from the response.
-    """
-    system_prompt = build_system_prompt(session)
 
-    # Build messages list for the API
-    api_messages = []
-    for msg in messages:
-        api_messages.append({"role": msg.role, "content": msg.content})
-
-    # If this is the very first message in a new session, add an initial
-    # assistant greeting so the interview starts naturally
-    if not api_messages:
-        api_messages.append(
-            {
-                "role": "user",
-                "content": "Hello, I'd like help with my resume.",
-            }
-        )
-
-    response = create_message(
-        client,
+async def _call(system_prompt: str, api_messages: list[dict]) -> str:
+    response = await create_message(
         effort="medium",
         max_tokens=MAX_TOKENS,
         system=system_prompt,
         messages=api_messages,
     )
+    return response_text(response)
 
-    raw_text = response_text(response)
 
-    # Extract META block and parse session updates
-    clean_text, meta = extract_meta(raw_text)
-    session_updates = parse_session_updates(meta)
+async def chat_with_claude(
+    system_prompt: str, api_messages: list[dict]
+) -> tuple[str, list]:
+    """Send the conversation to Claude; return (clean_text, metas).
 
-    # Handle discovery_data merge
-    if "_discovery_merge" in session_updates:
-        merge_data = session_updates.pop("_discovery_merge")
-        current = dict(session.discovery_data) if session.discovery_data else {}
-        current.update(merge_data)
-        session_updates["discovery_data"] = current
+    The async client awaits the provider, so no DB transaction or lock is held and
+    the event loop stays free. META blocks are returned as untrusted proposals
+    (validated by session_state.validate_updates against the locked session).
+    """
+    # If this is the very first message in a new session, add an initial
+    # greeting request so the interview starts naturally
+    if not api_messages:
+        api_messages = [{"role": "user", "content": "Hello, I'd like help with my resume."}]
 
-    return clean_text, session_updates
+    raw_text = await _call(system_prompt, api_messages)
+    clean_text, metas = extract_meta(raw_text)
+    if not clean_text:
+        raise EmptyReply("The reply came back empty")
+    return clean_text, metas
