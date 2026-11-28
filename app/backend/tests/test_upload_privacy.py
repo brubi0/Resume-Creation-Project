@@ -446,3 +446,37 @@ async def test_deliverable_list_is_per_candidate(client, deliverables_dir, admin
     assert str(did) in ids
     assert (await client.get(f"/api/deliverables/{did}/preview", headers=a["headers"])).status_code == 403
     assert (await client.get(f"/api/deliverables/{uuid.uuid4()}/preview", headers=a["headers"])).status_code == 404
+
+
+async def test_discovery_write_racing_candidate_delete_leaves_no_files(client, deliverables_dir, monkeypatch):
+    """Codex P2: a delete landing mid-write must not leave the deleted candidate's notes on disk."""
+    import asyncio
+    import threading
+
+    from app import discovery_writer
+
+    admin = await make_admin_headers(client)
+    c = await make_candidate(client, "Race Rita")
+    async with async_session() as db:
+        s = Session(user_id=c["id"], discovery_data={"candidate_name": "Race Rita",
+                                                    "contact": {"email": "rita@example.test"}})
+        db.add(s)
+        await db.commit()
+        await db.refresh(s)
+    started, release = threading.Event(), threading.Event()
+    real = discovery_writer.write_discovery_md
+
+    def slow_write(session):
+        started.set()
+        assert release.wait(20)
+        real(session)
+
+    monkeypatch.setattr(discovery_writer, "write_discovery_md", slow_write)
+    writer = asyncio.create_task(discovery_writer.write_discovery_md_if_session_exists(s))
+    assert await asyncio.to_thread(started.wait, 10)
+    deleter = asyncio.create_task(client.delete(f"/api/admin/candidates/{c['id']}", headers=admin))
+    await asyncio.sleep(0.5)
+    release.set()
+    assert await writer is True
+    assert (await deleter).status_code == 200
+    assert not session_dir(s.id).exists()

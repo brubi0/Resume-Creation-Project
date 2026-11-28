@@ -31,6 +31,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
   - Starting a tailored resume didn't refresh the list, so its failure never showed.
   - The omitted-contact check missed Markdown autolinks, `mailto:`/`tel:` links and HTML-entity emails.
   - (Re-review) A run still working past the stale window could, after a retry, overwrite the retry's documents or status. Each run is now fenced by its claim token (checked under a row lock before publishing or recording failure) and works in its own staging directory; reusable text is copied in from earlier attempts.
+  - (Third pass) A candidate deleted while their interview notes were being written could leave the notes file on disk. The write now holds a shared lock on the session row, so the delete's cleanup always runs after it.
 - **Low:**
   - Skipped questions replaced earlier skips.
   - Retry after a failed tailoring run reran the full base set.
@@ -42,7 +43,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 
 | Gate | Result |
 |---|---|
-| Backend (`app/backend/run-tests.sh`, real Postgres, mocked Claude) | **201 passed, 1 xfailed** (known migration/model timestamp drift, below) |
+| Backend (`app/backend/run-tests.sh`, real Postgres, mocked Claude) | **202 passed, 1 xfailed** (known migration/model timestamp drift, below) |
 | Baseline before the work | 5 passed, 7 strict xfails describing the bugs; 6 of those xfails now pass as regular tests |
 | PostgreSQL concurrency | Parallel first visits = 1 session; 10 concurrent new-session calls = 1 new session; new-session racing first visit; simultaneous sends (one wins, the other 409, nothing lost or duplicated); the same message twice = 1 model call; new interview while a reply is in flight; stale takeover; late reply after generation; other candidates never blocked |
 | Mocked provider | Success, timeout, connection error, 429, 500/529, 401/403/404, refusal, max_tokens, empty text, malformed META; a 3 s slow reply leaves `/api/health` at 0.001 s and another candidate's messages at 0.009 s |
@@ -58,7 +59,7 @@ Production code: 24 files, +2,445 / −501. Tests and e2e: 32 files, +4,602.
 **Not run:**
 - Paid live-model tests. They need your approval and should use synthetic candidates.
 - The production diagnostics run. It is read-only but needs your approval.
-- Codex review: PR #8 clean; PR #9 raised 4 P2s over two passes, all fixed above.
+- Codex review: PR #8 clean; PR #9 raised 5 P2s over three passes, all fixed above.
 
 ## 3. Security and privacy review
 
@@ -115,6 +116,6 @@ Hardens the candidate journey end to end.
 - **Chat:** chat turns are serialized and idempotent and survive provider failures (answers are kept, Try again). The model's state updates are validated, never applied blindly.
 - **Interview and facts:** the interview tracks real question ids, accepts skips and omitted contact fields, and the candidate-approved resume becomes the final resume.
 - **Privacy:** model-written HTML now renders in a sandboxed iframe (closes a stored-XSS path to the admin token).
-- **Tests and tooling:** adds a Postgres-backed test suite (201 tests), Playwright mocked and journey runs, synthetic document checks, and read-only diagnostics.
+- **Tests and tooling:** adds a Postgres-backed test suite (202 tests), Playwright mocked and journey runs, synthetic document checks, and read-only diagnostics.
 
 Migrations 0006 and 0007 are additive and run on deploy.
