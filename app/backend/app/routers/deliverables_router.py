@@ -171,9 +171,10 @@ async def trigger_generation(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if not await claim_generation(db, session.id):
+    claim = await claim_generation(db, session.id)
+    if claim is None:
         raise HTTPException(status_code=409, detail=ALREADY_RUNNING)
-    start_base_generation(session.id)
+    start_base_generation(session.id, claim)
     return {"detail": "Document generation started", "generation_status": "running"}
 
 
@@ -188,7 +189,8 @@ async def trigger_targeting(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if not await claim_generation(db, session.id, "targeted"):
+    claim = await claim_generation(db, session.id, "targeted")
+    if claim is None:
         raise HTTPException(status_code=409, detail=ALREADY_RUNNING)
 
     try:
@@ -213,7 +215,7 @@ async def trigger_targeting(
         )
         await db.commit()
         raise
-    start_targeted_generation(session.id, posting_id, body.include_cover_letter)
+    start_targeted_generation(session.id, posting_id, body.include_cover_letter, claim)
     return {"detail": "Targeting started", "generation_status": "running"}
 
 
@@ -227,7 +229,8 @@ async def retry_targeting(
     posting = (await db.execute(select(Posting).where(Posting.id == posting_id))).scalar_one_or_none()
     if posting is None:
         raise HTTPException(status_code=404, detail="Job posting not found")
-    if not await claim_generation(db, posting.session_id, "targeted", posting.id):
+    claim = await claim_generation(db, posting.session_id, "targeted", posting.id)
+    if claim is None:
         raise HTTPException(status_code=409, detail=ALREADY_RUNNING)
-    start_targeted_generation(posting.session_id, posting.id, posting.include_cover_letter)
+    start_targeted_generation(posting.session_id, posting.id, posting.include_cover_letter, claim)
     return {"detail": "Targeting started", "generation_status": "running"}

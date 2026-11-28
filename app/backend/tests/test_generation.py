@@ -377,6 +377,58 @@ async def test_interrupted_run_becomes_failed_in_admin_list(client, admin_header
     assert (await _sess(sid)).generation_status == "done"
 
 
+async def test_superseded_run_never_publishes_over_the_retry(client, admin_headers, fake_claude, monkeypatch):
+    """Codex P2: a run whose claim expired and was retaken must not touch the retry's documents."""
+    import threading
+    from app import deliverables
+    monkeypatch.setattr(deliverables, "STALE_CLAIM_MINUTES", 0)  # every claim is immediately stale
+    c, sid = await _session(client, "Zed Overlap")
+    release = threading.Event()
+    fake_claude.script(
+        ("wait", release, "# Zed Overlap\n\nZombie resume."),  # run A blocks on its first call
+        "# Zed Overlap\n\nRetry resume.", "# Prep B", "<html><body>matrix B</body></html>", "# Score B",
+        "# Prep A", "<html><body>matrix A</body></html>", "# Score A",
+    )
+    r = await client.post(f"/api/deliverables/generate?session_id={sid}", headers=admin_headers)
+    assert r.status_code == 202
+    assert await asyncio.to_thread(fake_claude.started.wait, 10)
+    r = await client.post(f"/api/deliverables/generate?session_id={sid}", headers=admin_headers)
+    assert r.status_code == 202  # stale claim retaken while A is still running
+    for _ in range(200):  # wait for B to publish
+        if (await _sess(sid)).generation_status == "done":
+            break
+        await asyncio.sleep(0.05)
+    b_rows = {r.id: r.file_path for r in await _rows(sid)}
+    assert len(b_rows) == 5
+    release.set()
+    await wait_for_generation_tasks()
+    s = await _sess(sid)
+    assert s.generation_status == "done" and s.generation_error is None
+    assert {r.id: r.file_path for r in await _rows(sid)} == b_rows
+    resume = next(r for r in await _rows(sid) if r.type == "resume_md")
+    assert "Retry resume" in open(resume.file_path).read()
+    assert all(os.path.exists(p) for p in b_rows.values())
+
+
+async def test_expired_run_without_retry_still_publishes(client, admin_headers, fake_claude, monkeypatch):
+    """Expiry alone (no retry) shows Try again, but the slow run may still finish and publish."""
+    import threading
+    from app import deliverables
+    monkeypatch.setattr(deliverables, "STALE_CLAIM_MINUTES", 0)
+    c, sid = await _session(client, "Ada Slow")
+    release = threading.Event()
+    fake_claude.script(("wait", release, "# Ada Slow\n\nSummary."), *BASE_REPLIES[1:])
+    r = await client.post(f"/api/deliverables/generate?session_id={sid}", headers=admin_headers)
+    assert r.status_code == 202
+    assert await asyncio.to_thread(fake_claude.started.wait, 10)
+    lst = (await client.get("/api/admin/candidates", headers=admin_headers)).json()
+    assert next(x for x in lst if x["id"] == str(c["id"]))["generation_status"] == "failed"
+    release.set()
+    await wait_for_generation_tasks()
+    assert (await _sess(sid)).generation_status == "done"
+    assert len(await _rows(sid)) == 5
+
+
 async def test_failed_status_visible_in_admin_list(client, admin_headers, fake_claude):
     c, sid = await _session(client, "Xan Software")
     fake_claude.script("")

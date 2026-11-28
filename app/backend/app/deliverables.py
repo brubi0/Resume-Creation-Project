@@ -1,9 +1,11 @@
 """Document generation.
 
-Contract: a run generates every file into session_dir/.staging/<run>/, verifies
+Contract: a run generates every file into session_dir/.staging/<run>/<attempt>/, verifies
 them, and only then moves them into place under UUID names and swaps the DB rows
 in one transaction. Any failure writes no rows, keeps the previous set, and sets
 sessions.generation_status='failed' with a short, safe message.
+Each run is fenced by its claim token (generation_started_at): a run whose claim was
+retaken after the stale window never publishes files or records status.
 """
 
 import asyncio
@@ -58,14 +60,26 @@ class DocumentError(Exception):
     """A failure whose message is safe to show to the admin."""
 
 
+class _Superseded(Exception):
+    """This run's claim was retaken (stale-claim retry); it must not publish or record anything."""
+
+
+# A run owns the session while generation_started_at still equals its claim. 'failed' is
+# allowed so a slow run whose claim merely expired (no retry yet) can still publish.
+_OWNS_CLAIM_SQL = (
+    "generation_started_at = :claim AND generation_status IN ('running', 'failed')"
+)
+
+
 # --------------------------------------------------------------- claim / tasks
 
 
 async def claim_generation(
     db, session_id: uuid.UUID, kind: str = "base", posting_id: uuid.UUID | None = None
-) -> bool:
-    """Atomically mark the session as running. False if a live run holds it.
+):
+    """Atomically mark the session as running. Returns the claim token, or None if a live run holds it.
 
+    The token (generation_started_at) fences the run: it publishes only while it still owns it.
     Records what is running (kind, posting) so a later "Try again" repeats the same run.
     """
     result = await db.execute(
@@ -74,13 +88,13 @@ async def claim_generation(
             "generation_started_at=now(), generation_kind=:kind, generation_posting_id=:pid WHERE id=:id AND (generation_status <> 'running' "
             "OR generation_started_at IS NULL "
             f"OR generation_started_at < now() - interval '{STALE_CLAIM_MINUTES} minutes') "
-            "RETURNING id"
+            "RETURNING generation_started_at"
         ),
         {"id": session_id, "kind": kind, "pid": posting_id},
     )
     row = result.first()
     await db.commit()
-    return row is not None
+    return row[0] if row else None
 
 
 def _spawn(coro) -> None:
@@ -89,14 +103,16 @@ def _spawn(coro) -> None:
     task.add_done_callback(_tasks.discard)
 
 
-def start_base_generation(session_id: uuid.UUID) -> None:
-    _spawn(_guarded(session_id, _generate_base(session_id)))
+def start_base_generation(session_id: uuid.UUID, claim) -> None:
+    _spawn(_guarded(session_id, _generate_base(session_id, claim), claim))
 
 
 def start_targeted_generation(
-    session_id: uuid.UUID, posting_id: uuid.UUID, include_cover_letter: bool
+    session_id: uuid.UUID, posting_id: uuid.UUID, include_cover_letter: bool, claim
 ) -> None:
-    _spawn(_guarded(session_id, _generate_targeted(session_id, posting_id, include_cover_letter)))
+    _spawn(_guarded(
+        session_id, _generate_targeted(session_id, posting_id, include_cover_letter, claim), claim
+    ))
 
 
 async def wait_for_generation_tasks(timeout: float = 120) -> None:
@@ -107,10 +123,13 @@ async def wait_for_generation_tasks(timeout: float = 120) -> None:
         )
 
 
-async def _guarded(session_id: uuid.UUID, work) -> None:
+async def _guarded(session_id: uuid.UUID, work, claim=None) -> None:
     try:
         await work
         await _drop_dir_if_session_gone(session_id)
+        return
+    except _Superseded:
+        log.info("generation superseded by a newer run session=%s", session_id)
         return
     except DocumentError as e:
         msg = str(e)
@@ -129,11 +148,20 @@ async def _guarded(session_id: uuid.UUID, work) -> None:
     await _drop_dir_if_session_gone(session_id)
     try:
         async with async_session() as db:
-            await db.execute(
-                update(Session)
-                .where(Session.id == session_id)
-                .values(generation_status="failed", generation_error=msg[:500])
-            )
+            if claim is None:
+                await db.execute(
+                    update(Session)
+                    .where(Session.id == session_id)
+                    .values(generation_status="failed", generation_error=msg[:500])
+                )
+            else:  # a superseded run must not overwrite the newer run's status
+                await db.execute(
+                    text(
+                        "UPDATE sessions SET generation_status='failed', generation_error=:msg "
+                        f"WHERE id=:id AND {_OWNS_CLAIM_SQL}"
+                    ),
+                    {"msg": msg[:500], "id": session_id, "claim": claim},
+                )
             await db.commit()
     except Exception as exc:
         log.error("could not record generation failure session=%s: %s", session_id, type(exc).__name__)
@@ -192,16 +220,15 @@ async def _stage_text(
     ever written, so a bad one can never be reused as a good staged file.
     """
     path = stage / f"{key}{ext}"
-    hash_path = stage / f"{key}.inputs.sha256"
+    cache = stage / f"{key}{ext}.cache"  # "<inputs digest>\n<content>", replaced atomically
     digest = _inputs_hash(system, user)
-    if path.is_file() and hash_path.is_file():
-        try:
-            if hash_path.read_text().strip() == digest:
-                reused = path.read_text(encoding="utf-8")
-                if reused.strip():
-                    return reused
-        except OSError:
-            pass
+    try:
+        head, _, reused = cache.read_text(encoding="utf-8").partition("\n")
+        if head == digest and reused.strip():
+            path.write_text(reused, encoding="utf-8")
+            return reused
+    except OSError:
+        pass
     content = await _generate_with_claude(system, user)
     if not content or not content.strip():
         raise DocumentError(f"The {label} came back empty. Try again.")
@@ -218,9 +245,10 @@ async def _stage_text(
             raise DocumentError(
                 f"The {label} included contact details or placeholders that weren't confirmed."
             )
-    hash_path.unlink(missing_ok=True)
     path.write_text(content, encoding="utf-8")
-    hash_path.write_text(digest)
+    tmp = cache.with_name(cache.name + ".tmp")
+    tmp.write_text(f"{digest}\n{content}", encoding="utf-8")
+    os.replace(tmp, cache)
     return content
 
 
@@ -254,42 +282,46 @@ def _require_files(items) -> None:
             raise DocumentError("A generated file was missing or empty. Try again.")
 
 
-async def _commit_set(session_id, items, *, kind, posting_id, replace_base, mark_generated):
-    """Move staged files into place, then swap DB rows in one transaction."""
+async def _commit_set(session_id, items, *, kind, posting_id, replace_base, mark_generated, claim=None):
+    """Move staged files into place and swap DB rows in one transaction.
+
+    With a claim, the session row is locked first and the run must still own it, so a
+    superseded run can never move files or replace the newer run's documents.
+    """
     if not await _session_exists(session_id):
         raise DocumentError("Session not found.")
     sdir = session_dir(session_id)
     sdir.mkdir(parents=True, exist_ok=True)
     placed: list[Path] = []
-    rows: list[Deliverable] = []
+    old_paths: list[str] = []
     try:
-        for it in items:
-            did = uuid.uuid4()
-            dest = sdir / storage_name(did, it["ext"])
-            os.replace(it["staged"], dest)
-            placed.append(dest)
-            rows.append(
-                Deliverable(
-                    id=did, session_id=session_id, type=it["type"], filename=it["filename"],
-                    file_path=str(dest), kind=kind, posting_id=posting_id,
-                )
-            )
-        old_paths: list[str] = []
         async with async_session() as db:
-            if replace_base:
-                old = (await db.execute(
-                    select(Deliverable.file_path).where(
-                        Deliverable.session_id == session_id, Deliverable.kind == "base",
-                        Deliverable.type.in_(BASE_TYPES),
-                    )
-                )).scalars().all()
-                old_paths = list(old)
-                await db.execute(
-                    delete(Deliverable).where(
-                        Deliverable.session_id == session_id, Deliverable.kind == "base",
-                        Deliverable.type.in_(BASE_TYPES),
+            if claim is not None:
+                owned = (await db.execute(
+                    text(f"SELECT 1 FROM sessions WHERE id=:id AND {_OWNS_CLAIM_SQL} FOR UPDATE"),
+                    {"id": session_id, "claim": claim},
+                )).first()
+                if owned is None:
+                    raise _Superseded()
+            rows: list[Deliverable] = []
+            for it in items:
+                did = uuid.uuid4()
+                dest = sdir / storage_name(did, it["ext"])
+                os.replace(it["staged"], dest)
+                placed.append(dest)
+                rows.append(
+                    Deliverable(
+                        id=did, session_id=session_id, type=it["type"], filename=it["filename"],
+                        file_path=str(dest), kind=kind, posting_id=posting_id,
                     )
                 )
+            if replace_base:
+                base = (
+                    Deliverable.session_id == session_id, Deliverable.kind == "base",
+                    Deliverable.type.in_(BASE_TYPES),
+                )
+                old_paths = list((await db.execute(select(Deliverable.file_path).where(*base))).scalars().all())
+                await db.execute(delete(Deliverable).where(*base))
             db.add_all(rows)
             values = {"generation_status": "done", "generation_error": None}
             if mark_generated:
@@ -308,15 +340,36 @@ async def _commit_set(session_id, items, *, kind, posting_id, replace_base, mark
 
 
 def _staging(session_id, run: str) -> Path:
-    stage = session_dir(session_id) / ".staging" / run
+    """A fresh directory for this attempt, seeded with earlier attempts' reusable text.
+
+    Attempts never share a directory, so an expired run still working can't touch a
+    retry's files. Only the atomically written *.cache files are copied (newest wins).
+    """
+    root = session_dir(session_id) / ".staging" / run
+    stage = root / uuid.uuid4().hex[:12]
     stage.mkdir(parents=True, exist_ok=True)
+    try:
+        earlier = sorted((p for p in root.iterdir() if p.is_dir() and p != stage),
+                         key=lambda p: p.stat().st_mtime)
+    except OSError:
+        earlier = []
+    for prev in earlier:
+        for f in prev.glob("*.cache"):
+            try:
+                tmp = stage / (f.name + ".tmp")
+                shutil.copyfile(f, tmp)
+                os.replace(tmp, stage / f.name)
+            except OSError:
+                pass
     return stage
 
 
 def _clear_staging(stage: Path) -> None:
-    shutil.rmtree(stage, ignore_errors=True)
+    """After a published run: drop every attempt for this run, then .staging if empty."""
+    root = stage.parent
+    shutil.rmtree(root, ignore_errors=True)
     try:
-        stage.parent.rmdir()  # only if now empty
+        root.parent.rmdir()  # only if now empty
     except OSError:
         pass
 
@@ -351,7 +404,7 @@ def _candidate_name(session: Session) -> str:
 # ------------------------------------------------------------------ base set
 
 
-async def _generate_base(session_id: uuid.UUID) -> None:
+async def _generate_base(session_id: uuid.UUID, claim=None) -> None:
     session = await _load_session(session_id)
     files = _load_system_files()
 
@@ -429,7 +482,7 @@ async def _generate_base(session_id: uuid.UUID) -> None:
     ]
     _require_files(items)
     await _commit_set(session_id, items, kind="base", posting_id=None,
-                      replace_base=True, mark_generated=True)
+                      replace_base=True, mark_generated=True, claim=claim)
     _clear_staging(stage)
 
 
@@ -639,7 +692,9 @@ async def _base_resume_text(session_id) -> str:
         return ""
 
 
-async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, include_cover_letter: bool) -> None:
+async def _generate_targeted(
+    session_id: uuid.UUID, posting_id: uuid.UUID, include_cover_letter: bool, claim=None
+) -> None:
     """A targeted resume variant and optional cover letter for one posting."""
     session = await _load_session(session_id)
     async with async_session() as db:
@@ -720,5 +775,5 @@ async def _generate_targeted(session_id: uuid.UUID, posting_id: uuid.UUID, inclu
 
     _require_files(items)
     await _commit_set(session_id, items, kind="targeted", posting_id=posting_id,
-                      replace_base=False, mark_generated=False)
+                      replace_base=False, mark_generated=False, claim=claim)
     _clear_staging(stage)
