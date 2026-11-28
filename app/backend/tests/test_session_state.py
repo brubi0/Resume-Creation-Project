@@ -208,3 +208,25 @@ def test_skipped_questions_accumulate_across_turns():
     accepted, rejected = val(s, {"discovery_update": {"skipped_questions": ["employment_gaps"]}})
     assert not rejected
     assert accepted["discovery_data"]["skipped_questions"] == ["hidden_achievements", "employment_gaps"]
+
+
+def test_legacy_session_finishes_without_draft_or_question_ids():
+    """Codex P2: interviews under way before the upgrade (no RESUME markers, no question ids)
+    must not be stranded. New sessions keep the strict rules."""
+    old = {"work_history": "Ran the service desk for nine years", "contact": {"email": "a@b.co"}}
+    # phase 2 -> 3 without question ids
+    assert val(sess(phase=2, experience_level="experienced", discovery_data=old, legacy_flow=True),
+               {"phase": 3})[0] == {"phase": 3}
+    assert val(sess(phase=2, experience_level="experienced", discovery_data=old),
+               {"phase": 3})[0] == {}
+    # approval in phase 3 without a captured draft: completes, approved_resume stays unset
+    legacy3 = sess(phase=3, experience_level="experienced", resume_draft=None,
+                   approved_resume=None, legacy_flow=True)
+    assert val(legacy3, {"status": "interview_complete"})[0] == {"status": "interview_complete"}
+    # a legacy session that did capture a draft still uses it
+    legacy3d = sess(phase=3, experience_level="experienced", resume_draft="# R",
+                    approved_resume=None, legacy_flow=True)
+    assert val(legacy3d, {"status": "interview_complete"})[0] == {
+        "status": "interview_complete", "approved_resume": "# R"}
+    # still no shortcuts outside phase 3
+    assert val(sess(phase=2, legacy_flow=True), {"status": "interview_complete"})[0] == {}

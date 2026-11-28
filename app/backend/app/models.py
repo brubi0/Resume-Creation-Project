@@ -89,6 +89,12 @@ class Session(Base):
     )
     resume_draft: Mapped[str | None] = mapped_column(Text, nullable=True)
     approved_resume: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Sessions that existed before the question-id / RESUME-marker flow (set by migration
+    # 0007). They may finish without question ids or a captured draft; the final resume is
+    # then written from the interview, as before.
+    legacy_flow: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(
         default=lambda: datetime.utcnow()
     )

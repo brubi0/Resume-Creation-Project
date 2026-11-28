@@ -26,6 +26,13 @@ def upgrade() -> None:
     )
     op.add_column("sessions", sa.Column("resume_draft", sa.Text(), nullable=True))
     op.add_column("sessions", sa.Column("approved_resume", sa.Text(), nullable=True))
+    # Interviews already under way predate question ids and RESUME markers: mark them so the
+    # new completion rules don't strand them (they finish the old way).
+    op.add_column(
+        "sessions",
+        sa.Column("legacy_flow", sa.Boolean(), nullable=False, server_default=sa.text("false")),
+    )
+    op.execute("UPDATE sessions SET legacy_flow = true")
     op.add_column(
         "messages",
         sa.Column("status", sa.String(20), nullable=False, server_default="ok"),
@@ -44,6 +51,7 @@ def downgrade() -> None:
     op.drop_index("uq_messages_session_client_message", table_name="messages")
     op.drop_column("messages", "client_message_id")
     op.drop_column("messages", "status")
+    op.drop_column("sessions", "legacy_flow")
     op.drop_column("sessions", "approved_resume")
     op.drop_column("sessions", "resume_draft")
     op.drop_column("sessions", "turn_started_at")

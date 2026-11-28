@@ -209,6 +209,7 @@ def validate_updates(
 
     accepted: dict = {}
     cur_phase = session.phase
+    legacy = bool(getattr(session, "legacy_flow", False))
     cur_level = session.experience_level
     cur_profile = session.profile_slug
 
@@ -253,7 +254,7 @@ def validate_updates(
             rejected.append("phase_needs_profile")
         elif cur_phase == 1 and not level:
             rejected.append("phase_needs_level")
-        elif cur_phase == 2 and not discovery_complete(level, data):
+        elif cur_phase == 2 and not legacy and not discovery_complete(level, data):
             rejected.append("phase_needs_discovery")
         else:
             accepted["phase"] = v
@@ -267,14 +268,15 @@ def validate_updates(
 
     if "status" in merged:
         v = merged["status"]
-        if v == "interview_complete" and phase == 3 and draft and draft.strip():
+        has_draft = bool(draft and draft.strip())
+        if v == "interview_complete" and phase == 3 and (has_draft or legacy):
             if session.status not in ("active", "interview_complete"):
                 # e.g. documents were generated while this reply was in flight
                 rejected.append("status")
             else:
                 if session.status != "interview_complete":
                     accepted["status"] = v
-                if draft != getattr(session, "approved_resume", None):
+                if has_draft and draft != getattr(session, "approved_resume", None):
                     accepted["approved_resume"] = draft
         else:
             rejected.append("status")

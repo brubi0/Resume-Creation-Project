@@ -112,3 +112,38 @@ async def test_0006_backfills_targeted_kind():
         await conn.close()
     assert {t: rows[t] for t in types[:4]} == {t: "targeted" for t in types[:4]}
     assert {rows[t] for t in types[4:]} == {"base"}
+
+
+async def test_0007_marks_existing_sessions_legacy_and_new_ones_strict():
+    url = make_url(settings.DATABASE_URL)
+    await _recreate_db(url)
+    mig_url = url.set(database=MIG_DB)
+    env = {**os.environ, "DATABASE_URL": mig_url.render_as_string(hide_password=False)}
+    cwd = os.path.dirname(os.path.dirname(__file__))
+
+    def alembic(*args):
+        proc = subprocess.run([sys.executable, "-m", "alembic", *args], cwd=cwd, env=env,
+                              capture_output=True, text=True, timeout=120)
+        assert proc.returncode == 0, proc.stderr
+
+    await asyncio.to_thread(alembic, "upgrade", "0006")
+    conn = await asyncpg.connect(
+        user=url.username, password=url.password, host=url.host,
+        port=url.port or 5432, database=MIG_DB,
+    )
+    try:
+        uid = await conn.fetchval(
+            "INSERT INTO users (id, name, username, password_hash, role) "
+            "VALUES (gen_random_uuid(), 'Lee Legacy', 'lee', 'x', 'candidate') RETURNING id"
+        )
+        old = await conn.fetchval(
+            "INSERT INTO sessions (id, user_id, phase, status) "
+            "VALUES (gen_random_uuid(), $1, 3, 'active') RETURNING id", uid)
+        await asyncio.to_thread(alembic, "upgrade", "head")
+        new = await conn.fetchval(
+            "INSERT INTO sessions (id, user_id, phase, status) "
+            "VALUES (gen_random_uuid(), $1, 0, 'active') RETURNING id", uid)
+        flags = dict(await conn.fetch("SELECT id, legacy_flow FROM sessions"))
+    finally:
+        await conn.close()
+    assert flags[old] is True and flags[new] is False
